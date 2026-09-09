@@ -1,0 +1,92 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A43674C1-DB8A-4C4A-B839-09F1D14CFCA8}|CulinaryBlog.API\\CulinaryBlog.API.csproj|d:\\ptudwnc-2026-nhom1\\culinaryblog\\culinaryblog.api\\culinaryblog.api.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{A43674C1-DB8A-4C4A-B839-09F1D14CFCA8}|CulinaryBlog.API\\CulinaryBlog.API.csproj|solutionrelative:culinaryblog.api\\culinaryblog.api.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{21A32539-E683-428E-A07E-35B8F7843471}|CulinaryBlog.Application\\CulinaryBlog.Application.csproj|d:\\ptudwnc-2026-nhom1\\culinaryblog\\culinaryblog.application\\culinaryblog.application.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{21A32539-E683-428E-A07E-35B8F7843471}|CulinaryBlog.Application\\CulinaryBlog.Application.csproj|solutionrelative:culinaryblog.application\\culinaryblog.application.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5969ED1E-E7FE-4820-B911-65E4D0BFA46D}|CulinaryBlog.Domain\\CulinaryBlog.Domain.csproj|d:\\ptudwnc-2026-nhom1\\culinaryblog\\culinaryblog.domain\\culinaryblog.domain.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{5969ED1E-E7FE-4820-B911-65E4D0BFA46D}|CulinaryBlog.Domain\\CulinaryBlog.Domain.csproj|solutionrelative:culinaryblog.domain\\culinaryblog.domain.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BD86D99F-94A4-4678-B330-E6D067C4F297}|CulinaryBlog.Infrastructure\\CulinaryBlog.Infrastructure.csproj|d:\\ptudwnc-2026-nhom1\\culinaryblog\\culinaryblog.infrastructure\\culinaryblog.infrastructure.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{BD86D99F-94A4-4678-B330-E6D067C4F297}|CulinaryBlog.Infrastructure\\CulinaryBlog.Infrastructure.csproj|solutionrelative:culinaryblog.infrastructure\\culinaryblog.infrastructure.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{b1e99781-ab81-11d0-b683-00aa00a3ee26}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "CulinaryBlog.API.csproj",
+              "DocumentMoniker": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.API\\CulinaryBlog.API.csproj",
+              "RelativeDocumentMoniker": "CulinaryBlog.API\\CulinaryBlog.API.csproj",
+              "ToolTip": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.API\\CulinaryBlog.API.csproj",
+              "RelativeToolTip": "CulinaryBlog.API\\CulinaryBlog.API.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAOAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-09-09T15:01:16.024Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "CulinaryBlog.Infrastructure.csproj",
+              "DocumentMoniker": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.Infrastructure\\CulinaryBlog.Infrastructure.csproj",
+              "RelativeDocumentMoniker": "CulinaryBlog.Infrastructure\\CulinaryBlog.Infrastructure.csproj",
+              "ToolTip": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.Infrastructure\\CulinaryBlog.Infrastructure.csproj",
+              "RelativeToolTip": "CulinaryBlog.Infrastructure\\CulinaryBlog.Infrastructure.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-09-09T15:01:43.621Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "CulinaryBlog.Domain.csproj",
+              "DocumentMoniker": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.Domain\\CulinaryBlog.Domain.csproj",
+              "RelativeDocumentMoniker": "CulinaryBlog.Domain\\CulinaryBlog.Domain.csproj",
+              "ToolTip": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.Domain\\CulinaryBlog.Domain.csproj",
+              "RelativeToolTip": "CulinaryBlog.Domain\\CulinaryBlog.Domain.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAaAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-09-09T15:01:35.96Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "CulinaryBlog.Application.csproj",
+              "DocumentMoniker": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.Application\\CulinaryBlog.Application.csproj",
+              "RelativeDocumentMoniker": "CulinaryBlog.Application\\CulinaryBlog.Application.csproj",
+              "ToolTip": "D:\\PTUDWNC-2026-Nhom1\\CulinaryBlog\\CulinaryBlog.Application\\CulinaryBlog.Application.csproj",
+              "RelativeToolTip": "CulinaryBlog.Application\\CulinaryBlog.Application.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAaAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-09-09T15:01:27.817Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
