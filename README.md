@@ -6,12 +6,12 @@ Nền tảng web hiện đại cho phép người dùng chia sẻ, khám phá v�
 
 ## 👥 Danh sách Thành viên Nhóm
 
-| MSSV        | Họ và Tên               |
-| :---------- | :---------------------- |
-| **2312647** | Lê Anh Khoa             |
-| **2212426** | Nguyễn Hoàng Hiếu Nghĩa |
-| **2312639** | Vũ Thế Huỳnh            |
-| **2312582** | Trương Bảo Bảo          |
+| MSSV | Họ và Tên | Công việc phụ trách |
+| :--- | :--- | :--- |
+| **2312647** | Lê Anh Khoa | **FR-RCP-002:** Xem chi tiết công thức<br>**FR-RCP-003:** Tạo công thức<br>**FR-RCP-004:** Cập nhật công thức<br>**FR-RCP-005:** Đăng / Hủy đăng công thức<br>**FR-RCP-006:** Lưu trữ công thức<br>**FR-RCP-007:** Xóa công thức<br>**FR-RCP-009:** Quản lý nguyên liệu của công thức<br>**FR-RCP-010:** Quản lý các bước thực hiện công thức<br>**FR-JOB-002:** Xử lý ảnh và tạo ảnh thumbnail |
+| **2212426** | Nguyễn Hoàng Hiếu Nghĩa | **FR-AUTH-001:** Đăng ký tài khoản<br>**FR-AUTH-002:** Đăng nhập bằng Email/Mật khẩu<br>**FR-AUTH-003:** Đăng nhập bằng Google OAuth 2.0<br>**FR-AUTH-004:** Làm mới Access Token<br>**FR-AUTH-005:** Đăng xuất / Thu hồi Token<br>**FR-AUTH-006:** Xem thông tin cá nhân<br>**FR-AUTH-007:** Cập nhật thông tin cá nhân<br>**FR-JOB-001:** Gửi Email chào mừng |
+| **2312639** | Vũ Thế Huỳnh | **FR-RCP-001:** Danh sách công thức (phân trang, lọc, sắp xếp)<br>**FR-RCP-008:** Quản lý hình ảnh công thức (Upload / Đặt ảnh chính / Xóa)<br>**FR-SRCH-001:** Tìm kiếm toàn văn<br>**FR-SRCH-002:** Lọc công thức<br>**FR-SRCH-003:** Sắp xếp công thức<br>**FR-SRCH-004:** Phân trang kết quả<br>**FR-FILE-001:** Upload file lên MinIO<br>**FR-FILE-002:** Xóa file khỏi MinIO |
+| **2312582** | Trương Bảo Bảo | **FR-CAT-001:** Xem danh sách danh mục<br>**FR-CAT-002:** Xem chi tiết danh mục và các công thức<br>**FR-CAT-003:** Tạo danh mục<br>**FR-CAT-004:** Cập nhật danh mục<br>**FR-CAT-005:** Xóa danh mục<br>**FR-JOB-003:** Tạo Sitemap<br>**FR-OBS-001:** Health Check Endpoints<br>**FR-OBS-002:** Structured Logging<br>**FR-OBS-003:** Distributed Tracing & Metrics |
 
 ---
 
