@@ -7,6 +7,7 @@ using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Register;
 using MediatR;
 using Npgsql;
+using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,6 +39,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();
