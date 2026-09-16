@@ -23,22 +23,26 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, Guid>
         RegisterCommand request,
         CancellationToken cancellationToken)
     {
+        var username = request.Request.Username.Trim().ToLowerInvariant();
         var email = request.Request.Email.Trim().ToLower();
 
         var existingUser = await _context.Users
             .FirstOrDefaultAsync(
-                u => u.Email.ToLower() == email,
+                u => u.Email.ToLower() == email || u.Username.ToLower() == username,
                 cancellationToken);
 
         if (existingUser is not null)
         {
             throw new InvalidOperationException(
-                "Email đã được sử dụng.");
+                existingUser.Email.ToLower() == email
+                    ? "Email đã được sử dụng."
+                    : "Tên định danh đã được sử dụng.");
         }
 
         var user = new User
         {
             Id = Guid.NewGuid(),
+            Username = username,
             Email = email,
             FullName = request.Request.FullName.Trim(),
             CreatedAt = DateTime.UtcNow
