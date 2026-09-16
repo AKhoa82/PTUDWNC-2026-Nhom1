@@ -1,6 +1,10 @@
 @CulinaryBlog.API_HostAddress = http://localhost:5018
 
-GET {{CulinaryBlog.API_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{CulinaryBlog.API_HostAddress}}/api/Auth/register
+Content-Type: application/json
 
-###
+{
+	"email": "test@example.com",
+	"password": "Password123!",
+	"fullName": "Test User"
+}

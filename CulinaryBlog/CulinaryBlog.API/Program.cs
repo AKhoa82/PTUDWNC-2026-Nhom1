@@ -1,7 +1,35 @@
-var builder = WebApplication.CreateBuilder(args);
+using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using CulinaryBlog.Domain.Entities;
+using Microsoft.AspNetCore.Identity;
+using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Application.Features.Auth.Register;
+using MediatR;
+using Npgsql;
+using System.ComponentModel.DataAnnotations;
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:3000", "http://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<IApplicationDbContext>(
+    provider => provider.GetRequiredService<ApplicationDbContext>());
+
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -13,29 +41,63 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
 
-var summaries = new[]
+app.MapPost("/api/auth/register", async (
+    RegisterRequest request,
+    IMediator mediator,
+    CancellationToken cancellationToken) =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    var validationResults = new List<ValidationResult>();
+    var validationContext = new ValidationContext(request);
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    if (!Validator.TryValidateObject(
+            request,
+            validationContext,
+            validationResults,
+            validateAllProperties: true))
+    {
+        var errors = validationResults
+            .GroupBy(
+                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.")
+                    .ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return Results.ValidationProblem(errors);
+    }
+
+    try
+    {
+        var userId = await mediator.Send(
+            new RegisterCommand(request),
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            message = "Đăng ký thành công.",
+            userId
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new
+        {
+            message = ex.Message
+        });
+    }
+    catch (DbUpdateException ex) when (
+        ex.InnerException is PostgresException { SqlState: "23505" })
+    {
+        return Results.Conflict(new
+        {
+            message = "Email đã được sử dụng."
+        });
+    }
+});
 
 app.Run();
-
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
