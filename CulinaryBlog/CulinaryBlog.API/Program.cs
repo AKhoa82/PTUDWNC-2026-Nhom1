@@ -11,6 +11,7 @@ using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 
 var builder = WebApplication.CreateBuilder(args);
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -21,6 +22,7 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -35,7 +37,6 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -45,6 +46,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
 
+// Endpoint Register
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
     IMediator mediator,
@@ -101,5 +103,58 @@ app.MapPost("/api/auth/register", async (
         });
     }
 });
+
+// Endpoint GET Categories
+app.MapGet("/api/categories", async (
+    IApplicationDbContext dbContext,
+    CancellationToken cancellationToken) =>
+{
+    var categories = await dbContext.Categories
+        .AsNoTracking()
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(categories);
+})
+.WithName("GetCategories")
+.WithSummary("Lấy danh sách danh mục món ăn/bài viết");
+
+// Tự động Migration và Seed dữ liệu mẫu
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    
+    // Tự động áp dụng Migration để tạo bảng Categories trong PostgreSQL
+    await dbContext.Database.MigrateAsync();
+
+    // Thêm dữ liệu mẫu nếu bảng Categories đang trống
+    if (!await dbContext.Categories.AnyAsync())
+    {
+        dbContext.Categories.AddRange(
+            new Category 
+            { 
+                Id = Guid.NewGuid(), 
+                Name = "Món Việt", 
+                Slug = "mon-viet", 
+                Description = "Các món ăn truyền thống Việt Nam" 
+            },
+            new Category 
+            { 
+                Id = Guid.NewGuid(), 
+                Name = "Món Á", 
+                Slug = "mon-a", 
+                Description = "Ẩm thực các nước Châu Á" 
+            },
+            new Category 
+            { 
+                Id = Guid.NewGuid(), 
+                Name = "Món Âu", 
+                Slug = "mon-au", 
+                Description = "Ẩm thực phong cách Châu Âu" 
+            }
+        );
+
+        await dbContext.SaveChangesAsync();
+    }
+}
 
 app.Run();
