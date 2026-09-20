@@ -1,3 +1,4 @@
+using CulinaryBlog.API.Endpoints;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
+
+app.MapRecipeEndpoints();
 
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
