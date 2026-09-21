@@ -38,4 +38,7 @@ public class Recipe
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
+
+    public ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();
+    public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
 }
