@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using MediatR;
@@ -11,7 +11,12 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
 {
     private readonly IApplicationDbContext _context;
     private readonly IDistributedCache _cache;
-    private const string CacheKey = "categories:all";
+
+    /// <summary>
+    /// Cache key dùng để invalidate khi Category được tạo, cập nhật hoặc xóa.
+    /// Inject IDistributedCache vào Create/Update/Delete handler và gọi InvalidateCacheAsync().
+    /// </summary>
+    public const string CacheKey = "categories:all";
 
     public GetCategoriesQueryHandler(IApplicationDbContext context, IDistributedCache cache)
     {
@@ -60,4 +65,11 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
 
         return categories;
     }
+
+    /// <summary>
+    /// Xóa cache danh sách category. Gọi method này trong handler Create/Update/Delete Category.
+    /// Ví dụ: await GetCategoriesQueryHandler.InvalidateCacheAsync(cache, cancellationToken);
+    /// </summary>
+    public static Task InvalidateCacheAsync(IDistributedCache cache, CancellationToken cancellationToken = default)
+        => cache.RemoveAsync(CacheKey, cancellationToken);
 }

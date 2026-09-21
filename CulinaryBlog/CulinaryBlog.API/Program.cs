@@ -36,8 +36,13 @@ builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
 
-// Dùng In-Memory Cache thay vì Redis để không bị lỗi Timeout ở môi trường Dev
-builder.Services.AddDistributedMemoryCache();
+// Redis Distributed Cache – TTL 60 phút, cache key: "categories:all"
+// Xem SRS_CONFLICT_RESOLUTIONS.md: đã chọn Redis thay vì IMemoryCache
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis");
+    options.InstanceName = "CulinaryBlog:";
+});
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -112,7 +117,7 @@ app.MapGet("/api/v1/categories", async (
     return Results.Ok(categories);
 })
 .WithName("GetCategoriesV1")
-.WithSummary("Lấy danh sách danh mục (CQRS + Memory Cache)")
+.WithSummary("Lấy danh sách danh mục (CQRS + Redis Cache, TTL 60 phút)")
 .AllowAnonymous();
 
 // Endpoint GET Chi tiết Category theo Slug
