@@ -1,4 +1,4 @@
-﻿using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -34,14 +34,22 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
             Description = category.Description,
             Recipes = category.Recipes.Select(r => new RecipeSummaryDto
             {
-                Id = r.Id,
-                Title = r.Title,
-                Slug = r.Slug,
-                Description = r.Description,
-                ImageUrl = r.ImageUrl,
+                Id                 = r.Id,
+                Title              = r.Title,
+                Slug               = r.Slug,
+                Description        = r.Description,
+                ImageUrl           = r.ImageUrl,
+                PrepTimeMinutes    = r.PrepTimeMinutes,
                 CookingTimeMinutes = r.CookingTimeMinutes,
-                Difficulty = r.Difficulty,
-                CreatedAt = r.CreatedAt
+                Servings           = r.Servings,
+                Difficulty         = r.Difficulty.ToString(),
+                Status             = r.Status.ToString(),
+                CategoryId         = r.CategoryId,
+                CategoryName       = category.Name,
+                AuthorId           = r.AuthorId,
+                CreatedAt          = r.CreatedAt,
+                UpdatedAt          = r.UpdatedAt,
+                PublishedAt        = r.PublishedAt
             }).ToList()
         };
     }
