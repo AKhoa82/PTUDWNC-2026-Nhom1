@@ -20,7 +20,7 @@ services:
       - culinaryblog-redis-data:/data
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: culinaryblog-minio
     command: server /data --console-address ":9001"
     environment:
