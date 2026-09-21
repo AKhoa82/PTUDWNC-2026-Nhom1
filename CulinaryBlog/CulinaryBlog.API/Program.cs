@@ -5,6 +5,8 @@ using CulinaryBlog.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Categories.GetCategories;
+using CulinaryBlog.Application.Features.Categories.Queries.GetCategoryBySlug;
 using MediatR;
 using Npgsql;
 using Scalar.AspNetCore;
@@ -33,6 +35,9 @@ builder.Services.AddScoped<IApplicationDbContext>(
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
+
+// Dùng In-Memory Cache thay vì Redis để không bị lỗi Timeout ở môi trường Dev
+builder.Services.AddDistributedMemoryCache();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -89,44 +94,49 @@ app.MapPost("/api/auth/register", async (
     }
     catch (InvalidOperationException ex)
     {
-        return Results.Conflict(new
-        {
-            message = ex.Message
-        });
+        return Results.Conflict(new { message = ex.Message });
     }
     catch (DbUpdateException ex) when (
         ex.InnerException is PostgresException { SqlState: "23505" })
     {
-        return Results.Conflict(new
-        {
-            message = "Email đã được sử dụng."
-        });
+        return Results.Conflict(new { message = "Email đã được sử dụng." });
     }
 });
 
-// Endpoint GET Categories
-app.MapGet("/api/categories", async (
-    IApplicationDbContext dbContext,
+// Endpoint GET Danh sách Categories (v1 + CQRS)
+app.MapGet("/api/v1/categories", async (
+    IMediator mediator,
     CancellationToken cancellationToken) =>
 {
-    var categories = await dbContext.Categories
-        .AsNoTracking()
-        .ToListAsync(cancellationToken);
-
+    var categories = await mediator.Send(new GetCategoriesQuery(), cancellationToken);
     return Results.Ok(categories);
 })
-.WithName("GetCategories")
-.WithSummary("Lấy danh sách danh mục món ăn/bài viết");
+.WithName("GetCategoriesV1")
+.WithSummary("Lấy danh sách danh mục (CQRS + Memory Cache)")
+.AllowAnonymous();
 
-// Tự động Migration và Seed dữ liệu mẫu
+// Endpoint GET Chi tiết Category theo Slug
+app.MapGet("/api/categories/{slug}", async (
+    string slug,
+    IMediator mediator,
+    CancellationToken cancellationToken) =>
+{
+    var result = await mediator.Send(new GetCategoryBySlugQuery(slug), cancellationToken);
+
+    return result is not null 
+        ? Results.Ok(result) 
+        : Results.NotFound(new { message = $"Không tìm thấy danh mục với slug: '{slug}'" });
+})
+.WithName("GetCategoryBySlug")
+.WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
+
+// Migration & Seed Data
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
-    // Tự động áp dụng Migration để tạo bảng Categories trong PostgreSQL
     await dbContext.Database.MigrateAsync();
 
-    // Thêm dữ liệu mẫu nếu bảng Categories đang trống
     if (!await dbContext.Categories.AnyAsync())
     {
         dbContext.Categories.AddRange(
