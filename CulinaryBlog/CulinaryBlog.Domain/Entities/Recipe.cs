@@ -27,6 +27,8 @@ public class Recipe
     public int Servings { get; set; } = 1;
     public RecipeDifficulty Difficulty { get; set; } = RecipeDifficulty.Easy;
     public RecipeStatus Status { get; set; } = RecipeStatus.Draft;
+    
+    public string Instructions { get; set; } = string.Empty;
 
     public Guid CategoryId { get; set; }
     public Category Category { get; set; } = null!;

@@ -8,6 +8,7 @@ using CulinaryBlog.Application.Features.Auth.Register;
 using CulinaryBlog.Application.Features.Categories.GetCategories;
 using CulinaryBlog.Application.Features.Categories.Queries.GetCategoryBySlug;
 using CulinaryBlog.Application.Features.Recipes.GetRecipes;
+using CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 using MediatR;
 using Npgsql;
 using Scalar.AspNetCore;
@@ -178,6 +179,55 @@ app.MapGet("/api/v1/recipes", async (
 .WithName("GetRecipesV1")
 .WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
 .AllowAnonymous();
+
+app.MapPost("/api/v1/recipes", async (
+    CreateRecipeRequest request,
+    IMediator mediator,
+    CancellationToken cancellationToken) =>
+{
+    var validationResults = new List<ValidationResult>();
+    var validationContext = new ValidationContext(request);
+
+    if (!Validator.TryValidateObject(
+        request,
+        validationContext,
+        validationResults,
+        validateAllProperties: true))
+    {
+        var errors = validationResults
+            .GroupBy(
+                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+            
+        return Results.ValidationProblem(errors);
+    }
+    
+    try
+    {
+        // Lấy AuthorId từ Token (Giả lập tạm thời nếu FR-AUTH chưa gắn)
+        string? authorId = null;
+
+        var recipeId = await mediator.Send(
+            new CreateRecipeCommand(request, authorId),
+            cancellationToken);
+
+        return Results.Created($"/api/v1/recipes/{recipeId}", new
+        {
+            message = "Tạo công thức thành công.",
+            id = recipeId
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+})
+.WithName("CreateRecipeV1")
+.WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
 
 using (var scope = app.Services.CreateScope())
 {
