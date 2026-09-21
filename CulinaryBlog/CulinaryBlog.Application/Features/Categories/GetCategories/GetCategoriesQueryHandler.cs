@@ -21,7 +21,7 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
 
     public async Task<List<CategoryDto>> Handle(GetCategoriesQuery request, CancellationToken cancellationToken)
     {
-        // 1. Đọc dữ liệu từ Redis cache
+        // 1. Đọc dữ liệu từ Distributed Memory Cache
         var cachedCategories = await _cache.GetStringAsync(CacheKey, cancellationToken);
         if (!string.IsNullOrEmpty(cachedCategories))
         {

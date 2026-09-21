@@ -6,5 +6,5 @@ public class CategoryDetailDto
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public List<RecipeSummaryDto> Recipes { get; set; } = new();
+    public List<RecipeDto> Recipes { get; set; } = new();
 }

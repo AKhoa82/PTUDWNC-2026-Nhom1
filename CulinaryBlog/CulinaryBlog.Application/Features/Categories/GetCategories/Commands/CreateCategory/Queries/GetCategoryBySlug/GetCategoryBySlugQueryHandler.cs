@@ -21,10 +21,7 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
             .Include(c => c.Recipes)
             .FirstOrDefaultAsync(c => c.Slug == request.Slug, cancellationToken);
 
-        if (category is null)
-        {
-            return null;
-        }
+        if (category == null) return null;
 
         return new CategoryDetailDto
         {
@@ -32,16 +29,11 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
             Name = category.Name,
             Slug = category.Slug,
             Description = category.Description,
-            Recipes = category.Recipes.Select(r => new RecipeSummaryDto
+            Recipes = category.Recipes.Select(r => new RecipeDto
             {
                 Id = r.Id,
                 Title = r.Title,
-                Slug = r.Slug,
-                Description = r.Description,
-                ImageUrl = r.ImageUrl,
-                CookingTimeMinutes = r.CookingTimeMinutes,
-                Difficulty = r.Difficulty,
-                CreatedAt = r.CreatedAt
+                Slug = r.Slug
             }).ToList()
         };
     }

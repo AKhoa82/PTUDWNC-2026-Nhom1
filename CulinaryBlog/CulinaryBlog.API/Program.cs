@@ -7,6 +7,7 @@ using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Register;
 using CulinaryBlog.Application.Features.Categories.GetCategories;
 using CulinaryBlog.Application.Features.Categories.Queries.GetCategoryBySlug;
+using CulinaryBlog.Application.Features.Categories.Commands.CreateCategory;
 using MediatR;
 using Npgsql;
 using Scalar.AspNetCore;
@@ -36,7 +37,7 @@ builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
 
-// Dùng In-Memory Cache thay vì Redis để không bị lỗi Timeout ở môi trường Dev
+// Dùng In-Memory Cache thay vì Redis ở môi trường Dev
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddOpenApi();
 
@@ -50,6 +51,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
+
+// ==========================================
+// 1. AUTH ENDPOINTS
+// ==========================================
 
 // Endpoint Register
 app.MapPost("/api/auth/register", async (
@@ -103,7 +108,11 @@ app.MapPost("/api/auth/register", async (
     }
 });
 
-// Endpoint GET Danh sách Categories (v1 + CQRS)
+// ==========================================
+// 2. CATEGORIES ENDPOINTS
+// ==========================================
+
+// FR-CAT-001: Endpoint GET Danh sách Categories (v1 + CQRS)
 app.MapGet("/api/v1/categories", async (
     IMediator mediator,
     CancellationToken cancellationToken) =>
@@ -115,7 +124,7 @@ app.MapGet("/api/v1/categories", async (
 .WithSummary("Lấy danh sách danh mục (CQRS + Memory Cache)")
 .AllowAnonymous();
 
-// Endpoint GET Chi tiết Category theo Slug
+// FR-CAT-002: Endpoint GET Chi tiết Category theo Slug
 app.MapGet("/api/categories/{slug}", async (
     string slug,
     IMediator mediator,
@@ -130,7 +139,33 @@ app.MapGet("/api/categories/{slug}", async (
 .WithName("GetCategoryBySlug")
 .WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
 
-// Migration & Seed Data
+// FR-CAT-003: Endpoint POST Tạo danh mục mới [Admin]
+app.MapPost("/api/v1/categories", async (
+    CreateCategoryCommand command,
+    IMediator mediator,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var categoryId = await mediator.Send(command, cancellationToken);
+
+        return Results.Created($"/api/categories/{command.Slug}", new 
+        { 
+            id = categoryId, 
+            message = "Tạo danh mục thành công." 
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { message = ex.Message });
+    }
+})
+.WithName("CreateCategory")
+.WithSummary("Tạo danh mục mới (Xóa cache categories:all)");
+
+// ==========================================
+// 3. MIGRATION & SEED DATA
+// ==========================================
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
