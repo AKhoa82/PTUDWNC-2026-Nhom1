@@ -29,7 +29,10 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
 
         if (recipe.Status != RecipeStatus.Published)
         {
-            throw new UnauthorizedAccessException("Không có quyền xem công thức chưa xuất bản.");
+            if (!request.IsAdmin && recipe.AuthorId != request.CurrentUserId)
+            {
+                throw new UnauthorizedAccessException("Không có quyền xem công thức chưa xuất bản.");
+            }
         }
 
         return new RecipeDetailDto

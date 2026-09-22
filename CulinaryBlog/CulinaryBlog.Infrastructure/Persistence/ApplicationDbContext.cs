@@ -17,6 +17,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     public new DbSet<User> Users => Set<User>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

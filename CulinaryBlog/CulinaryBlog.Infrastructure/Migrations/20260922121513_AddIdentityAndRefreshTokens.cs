@@ -20,15 +20,17 @@ namespace CulinaryBlog.Infrastructure.Migrations
                 name: "Users",
                 newName: "AspNetUsers");
 
-            migrationBuilder.RenameIndex(
-                name: "IX_Users_Username",
+            migrationBuilder.CreateIndex(
+                name: "IX_AspNetUsers_Username",
                 table: "AspNetUsers",
-                newName: "IX_AspNetUsers_Username");
+                column: "Username",
+                unique: true);
 
-            migrationBuilder.RenameIndex(
-                name: "IX_Users_Email",
+            migrationBuilder.CreateIndex(
+                name: "IX_AspNetUsers_Email",
                 table: "AspNetUsers",
-                newName: "IX_AspNetUsers_Email");
+                column: "Email",
+                unique: true);
 
             migrationBuilder.AlterColumn<string>(
                 name: "Username",
