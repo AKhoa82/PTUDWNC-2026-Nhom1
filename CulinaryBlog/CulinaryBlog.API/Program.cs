@@ -15,9 +15,16 @@ using MediatR;
 using Npgsql;
 using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using Microsoft.AspNetCore.OutputCaching;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ==================== SERVICE REGISTRATIONS ====================
+
+// 1. Cấu hình CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -29,6 +36,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+// 2. Cấu hình Database & DbContext
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -37,22 +45,55 @@ builder.Services.AddScoped<IApplicationDbContext>(
     provider => provider.GetRequiredService<ApplicationDbContext>());
 
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+
+// 3. Cấu hình MediatR
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
 
-builder.Services.AddStackExchangeRedisCache(options =>
+// 4. Cấu hình Authentication & JwtBearer
+builder.Services.AddAuthentication(options =>
 {
-    options.Configuration = builder.Configuration.GetConnectionString("Redis");
-    options.InstanceName = "CulinaryBlog:";
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "ChuoiSecretKeyMacDinhRatDaiThoaManTren32Bytes!"))
+    };
 });
+
+// 5. Cấu hình Authorization Policies
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Admin", policy =>
+    {
+        policy.RequireRole("Admin");
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+    });
+});
+
+// 6. Cấu hình Caching nội bộ
+builder.Services.AddDistributedMemoryCache();
+
 builder.Services.AddOutputCache(options =>
 {
-    options.AddPolicy("RecipeDetail", builder => 
-        builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
+    options.AddPolicy("RecipeDetail", policy => 
+        policy.Expire(TimeSpan.FromMinutes(15)).Tag("recipes"));
 });
+
+// 7. Cấu hình OpenAPI/Swagger
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+// ==================== MIDDLEWARE PIPELINE ====================
 
 if (app.Environment.IsDevelopment())
 {
@@ -62,6 +103,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseOutputCache();
 
 // ==================== AUTH ENDPOINTS ====================
@@ -71,26 +114,8 @@ app.MapPost("/api/auth/register", async (
     IMediator mediator,
     CancellationToken cancellationToken) =>
 {
-    var validationResults = new List<ValidationResult>();
-    var validationContext = new ValidationContext(request);
-
-    if (!Validator.TryValidateObject(
-            request,
-            validationContext,
-            validationResults,
-            validateAllProperties: true))
+    if (!TryValidateModel(request, out var errors))
     {
-        var errors = validationResults
-            .GroupBy(
-                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.")
-                    .ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-
         return Results.ValidationProblem(errors);
     }
 
@@ -128,11 +153,11 @@ app.MapGet("/api/v1/categories", async (
     return Results.Ok(categories);
 })
 .WithName("GetCategoriesV1")
-.WithSummary("Lấy danh sách danh mục (CQRS + Redis Cache, TTL 60 phút)")
+.WithSummary("Lấy danh sách danh mục")
 .AllowAnonymous();
 
 // FR-CAT-002: Lấy chi tiết danh mục theo Slug
-app.MapGet("/api/categories/{slug}", async (
+app.MapGet("/api/v1/categories/{slug}", async (
     string slug,
     IMediator mediator,
     CancellationToken cancellationToken) =>
@@ -147,50 +172,44 @@ app.MapGet("/api/categories/{slug}", async (
 .WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
 
 // FR-CAT-003: Tạo danh mục mới (Admin)
-app.MapPost("/api/v1/admin/categories", async (
+app.MapPost("/api/v1/categories", async (
     CreateCategoryRequest request,
     IMediator mediator,
     CancellationToken cancellationToken) =>
 {
-    var validationResults = new List<ValidationResult>();
-    var validationContext = new ValidationContext(request);
-
-    if (!Validator.TryValidateObject(
-        request,
-        validationContext,
-        validationResults,
-        validateAllProperties: true))
+    // Chặn triệt để tên trống, chỉ chứa khoảng trắng hoặc null
+    if (request is null || string.IsNullOrWhiteSpace(request.Name))
     {
-        var errors = validationResults
-            .GroupBy(
-                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
-                StringComparer.OrdinalIgnoreCase);
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            { "Name", new[] { "Tên danh mục không được để trống." } }
+        });
+    }
 
+    if (!TryValidateModel(request, out var errors))
+    {
         return Results.ValidationProblem(errors);
     }
 
     try
     {
-        var categoryId = await mediator.Send(
+        var (categoryId, slug) = await mediator.Send(
             new CreateCategoryCommand(request),
             cancellationToken);
 
-        return Results.Created($"/api/v1/categories/{categoryId}", new
+        return Results.Created($"/api/v1/categories/{slug}", new
         {
             message = "Tạo danh mục thành công.",
-            id = categoryId
+            id = categoryId,
+            slug
         });
     }
     catch (InvalidOperationException ex)
     {
-        return Results.Conflict(new { message = ex.Message });
+        return Results.BadRequest(new { message = ex.Message });
     }
 })
-.WithName("CreateCategoryAdminV1")
+.WithName("CreateCategoryV1")
 .WithSummary("FR-CAT-003 – Tạo danh mục mới (Admin)");
 
 // ==================== RECIPES ENDPOINTS ====================
@@ -240,7 +259,7 @@ app.MapGet("/api/v1/recipes", async (
     return Results.Ok(result);
 })
 .WithName("GetRecipesV1")
-.WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
+.WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp)")
 .AllowAnonymous();
 
 // FR-RCP-002: Xem chi tiết công thức
@@ -271,33 +290,24 @@ app.MapGet("/api/v1/recipes/{slug}", async (
 app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
-    Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore,
+    IOutputCacheStore cacheStore,
     CancellationToken cancellationToken) =>
 {
-    var validationResults = new List<ValidationResult>();
-    var validationContext = new ValidationContext(request);
-
-    if (!Validator.TryValidateObject(
-        request,
-        validationContext,
-        validationResults,
-        validateAllProperties: true))
+    if (request is null || string.IsNullOrWhiteSpace(request.Title))
     {
-        var errors = validationResults
-            .GroupBy(
-                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-            
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            { "Title", new[] { "Tiêu đề công thức không được để trống." } }
+        });
+    }
+
+    if (!TryValidateModel(request, out var errors))
+    {
         return Results.ValidationProblem(errors);
     }
     
     try
     {
-        // Lấy AuthorId từ Token (Giả lập tạm thời nếu FR-AUTH chưa gắn)
         string? authorId = null;
 
         var recipeId = await mediator.Send(
@@ -436,3 +446,39 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// ==================== HELPER METHODS ====================
+
+static bool TryValidateModel(object model, out Dictionary<string, string[]> errors)
+{
+    errors = new Dictionary<string, string[]>();
+
+    if (model is null)
+    {
+        errors.Add("Body", new[] { "Dữ liệu yêu cầu không được để trống." });
+        return false;
+    }
+
+    var validationResults = new List<ValidationResult>();
+    var validationContext = new ValidationContext(model);
+
+    bool isValid = Validator.TryValidateObject(
+        model,
+        validationContext,
+        validationResults,
+        validateAllProperties: true);
+
+    if (!isValid)
+    {
+        errors = validationResults
+            .GroupBy(
+                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    return isValid;
+}
