@@ -37,7 +37,6 @@ builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly));
 
-// Dùng In-Memory Cache thay vì Redis ở môi trường Dev
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddOpenApi();
 
@@ -56,7 +55,6 @@ app.UseCors("Frontend");
 // 1. AUTH ENDPOINTS
 // ==========================================
 
-// Endpoint Register
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
     IMediator mediator,
@@ -112,7 +110,7 @@ app.MapPost("/api/auth/register", async (
 // 2. CATEGORIES ENDPOINTS
 // ==========================================
 
-// FR-CAT-001: Endpoint GET Danh sách Categories (v1 + CQRS)
+// FR-CAT-001: Lấy danh sách danh mục
 app.MapGet("/api/v1/categories", async (
     IMediator mediator,
     CancellationToken cancellationToken) =>
@@ -121,10 +119,10 @@ app.MapGet("/api/v1/categories", async (
     return Results.Ok(categories);
 })
 .WithName("GetCategoriesV1")
-.WithSummary("Lấy danh sách danh mục (CQRS + Memory Cache)")
+.WithSummary("FR-CAT-001 – Lấy danh sách danh mục (CQRS + Cache)")
 .AllowAnonymous();
 
-// FR-CAT-002: Endpoint GET Chi tiết Category theo Slug
+// FR-CAT-002: Chi tiết danh mục theo Slug
 app.MapGet("/api/categories/{slug}", async (
     string slug,
     IMediator mediator,
@@ -132,27 +130,50 @@ app.MapGet("/api/categories/{slug}", async (
 {
     var result = await mediator.Send(new GetCategoryBySlugQuery(slug), cancellationToken);
 
-    return result is not null 
-        ? Results.Ok(result) 
+    return result is not null
+        ? Results.Ok(result)
         : Results.NotFound(new { message = $"Không tìm thấy danh mục với slug: '{slug}'" });
 })
 .WithName("GetCategoryBySlug")
-.WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
+.WithSummary("FR-CAT-002 – Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
 
-// FR-CAT-003: Endpoint POST Tạo danh mục mới [Admin]
-app.MapPost("/api/v1/categories", async (
-    CreateCategoryCommand command,
+// FR-CAT-003: Tạo danh mục mới (Admin)
+app.MapPost("/api/v1/admin/categories", async (
+    CreateCategoryRequest request,
     IMediator mediator,
     CancellationToken cancellationToken) =>
 {
+    var validationResults = new List<ValidationResult>();
+    var validationContext = new ValidationContext(request);
+
+    if (!Validator.TryValidateObject(
+        request,
+        validationContext,
+        validationResults,
+        validateAllProperties: true))
+    {
+        var errors = validationResults
+            .GroupBy(
+                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return Results.ValidationProblem(errors);
+    }
+
     try
     {
-        var categoryId = await mediator.Send(command, cancellationToken);
+        var categoryId = await mediator.Send(
+            new CreateCategoryCommand(request),
+            cancellationToken);
 
-        return Results.Created($"/api/categories/{command.Slug}", new 
-        { 
-            id = categoryId, 
-            message = "Tạo danh mục thành công." 
+        return Results.Created($"/api/v1/categories/{categoryId}", new
+        {
+            message = "Tạo danh mục thành công.",
+            id = categoryId
         });
     }
     catch (InvalidOperationException ex)
@@ -160,44 +181,26 @@ app.MapPost("/api/v1/categories", async (
         return Results.Conflict(new { message = ex.Message });
     }
 })
-.WithName("CreateCategory")
-.WithSummary("Tạo danh mục mới (Xóa cache categories:all)");
+.WithName("CreateCategoryAdminV1")
+.WithSummary("FR-CAT-003 – Tạo danh mục mới (Admin)");
 
 // ==========================================
 // 3. MIGRATION & SEED DATA
 // ==========================================
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    
+
     await dbContext.Database.MigrateAsync();
 
     if (!await dbContext.Categories.AnyAsync())
     {
-        dbContext.Categories.AddRange(
-            new Category 
-            { 
-                Id = Guid.NewGuid(), 
-                Name = "Món Việt", 
-                Slug = "mon-viet", 
-                Description = "Các món ăn truyền thống Việt Nam" 
-            },
-            new Category 
-            { 
-                Id = Guid.NewGuid(), 
-                Name = "Món Á", 
-                Slug = "mon-a", 
-                Description = "Ẩm thực các nước Châu Á" 
-            },
-            new Category 
-            { 
-                Id = Guid.NewGuid(), 
-                Name = "Món Âu", 
-                Slug = "mon-au", 
-                Description = "Ẩm thực phong cách Châu Âu" 
-            }
-        );
+        var monViet = new Category { Id = Guid.NewGuid(), Name = "Món Việt", Slug = "mon-viet", Description = "Các món ăn truyền thống Việt Nam" };
+        var monA    = new Category { Id = Guid.NewGuid(), Name = "Món Á",    Slug = "mon-a",    Description = "Ẩm thực các nước Châu Á" };
+        var monAu   = new Category { Id = Guid.NewGuid(), Name = "Món Âu",   Slug = "mon-au",   Description = "Ẩm thực phong cách Châu Âu" };
 
+        dbContext.Categories.AddRange(monViet, monA, monAu);
         await dbContext.SaveChangesAsync();
     }
 }
