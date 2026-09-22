@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { useState } from "react";
+import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, ChefHat, Eye, EyeOff, Lock, Mail, Sparkles, User, AlertCircle } from "lucide-react";
 import { registerSchema, type RegisterFormData } from "../lib/validations";
 
@@ -107,7 +108,7 @@ export default function RegisterPage() {
               {errors.acceptTerms && <p className="text-xs font-medium text-[#b9674a]">{String(errors.acceptTerms.message)}</p>}
               <button type="submit" disabled={isSubmitting} className="mt-3 flex h-[52px] w-full items-center justify-center gap-2 rounded-lg bg-[#c6a15b] text-xs font-semibold uppercase tracking-wider text-[#022c24] shadow-sm transition-all hover:bg-[#063c2f] hover:text-[#fbf8f1] disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#022c24] border-t-transparent" /> : <>Đăng ký tài khoản tác giả <ArrowRight className="h-4 w-4" /></>}</button>
             </form>
-            <div className="border-t border-[#e5dece] pt-4 text-center text-xs text-[#8d958f]"><span>Đã có tài khoản tác giả? </span><button type="button" className="ml-1 font-bold text-[#063c2f] underline underline-offset-4 hover:text-[#c6a15b]">Đăng nhập vào hệ thống →</button><p className="pt-2 text-[11px] text-[#8d958f]/70">Không gian chia sẻ tinh hoa ẩm thực ba miền và tri thức làm bếp Việt</p></div>
+            <div className="border-t border-[#e5dece] pt-4 text-center text-xs text-[#8d958f]"><span>Đã có tài khoản tác giả? </span><Link href="/auth/login" className="ml-1 font-bold text-[#063c2f] underline underline-offset-4 hover:text-[#c6a15b]">Đăng nhập vào hệ thống →</Link><p className="pt-2 text-[11px] text-[#8d958f]/70">Không gian chia sẻ tinh hoa ẩm thực ba miền và tri thức làm bếp Việt</p></div>
           </div>
         </section>
       </div>
