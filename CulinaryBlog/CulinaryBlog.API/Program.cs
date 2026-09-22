@@ -102,6 +102,7 @@ app.UseOutputCache();
 
 app.MapAuthEndpoints();
 app.MapRecipeIngredientEndpoints();
+app.MapRecipeStepEndpoints();
 
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
