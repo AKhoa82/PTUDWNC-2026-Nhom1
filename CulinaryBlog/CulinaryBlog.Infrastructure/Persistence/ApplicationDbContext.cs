@@ -8,14 +8,14 @@ namespace CulinaryBlog.Infrastructure.Persistence;
 
 public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>, IApplicationDbContext
 {
-    public ApplicationDbContext(
-        DbContextOptions<ApplicationDbContext> options)
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
     }
 
+    public DbSet<Category> Categories => Set<Category>();
     public new DbSet<User> Users => Set<User>();
-
+    public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -34,5 +34,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
             .HasOne(token => token.User)
             .WithMany()
             .HasForeignKey(token => token.UserId);
+
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }
 }
