@@ -10,6 +10,9 @@ public class RecipeStepConfiguration : IEntityTypeConfiguration<RecipeStep>
     {
         builder.HasKey(s => s.Id);
 
+        builder.Property(s => s.Title)
+            .HasMaxLength(200);
+
         builder.Property(s => s.Description)
             .IsRequired()
             .HasMaxLength(2000);

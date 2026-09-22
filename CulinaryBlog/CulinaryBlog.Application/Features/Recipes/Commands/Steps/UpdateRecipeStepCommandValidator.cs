@@ -6,6 +6,10 @@ public class UpdateRecipeStepCommandValidator : AbstractValidator<UpdateRecipeSt
 {
     public UpdateRecipeStepCommandValidator()
     {
+        RuleFor(p => p.Title)
+            .MaximumLength(200).WithMessage("Title không được vượt quá 200 ký tự.")
+            .When(p => !string.IsNullOrWhiteSpace(p.Title));
+
         RuleFor(p => p.Description)
             .NotEmpty().WithMessage("Description không được để trống.")
             .MaximumLength(2000).WithMessage("Description không được vượt quá 2000 ký tự.");

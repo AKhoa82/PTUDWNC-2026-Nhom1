@@ -39,14 +39,20 @@ public class UpdateRecipeStepCommandHandler : IRequestHandler<UpdateRecipeStepCo
             throw new InvalidOperationException("Bước thực hiện không tồn tại.");
         }
 
-        step.Update(request.Description, request.DurationMinutes, request.ImageUrl);
-        
+        step.Update(
+            request.Description,
+            title: request.Title,
+            durationMinutes: request.DurationMinutes,
+            imageUrl: request.ImageUrl
+        );
+
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RecipeStepDto
         {
             Id = step.Id,
             StepNumber = step.StepNumber,
+            Title = step.Title,
             Description = step.Description,
             DurationMinutes = step.DurationMinutes,
             ImageUrl = step.ImageUrl

@@ -8,24 +8,27 @@ public class RecipeStep
     public Recipe Recipe { get; set; } = null!;
     
     public int StepNumber { get; set; }
+    public string? Title { get; set; }
     public string Description { get; set; } = string.Empty;
     public int? DurationMinutes { get; set; }
     public string? ImageUrl { get; set; }
 
-    public static RecipeStep Create(Guid recipeId, int stepNumber, string description, int? durationMinutes = null, string? imageUrl = null)
+    public static RecipeStep Create(Guid recipeId, int stepNumber, string description, string? title = null, int? durationMinutes = null, string? imageUrl = null)
     {
         return new RecipeStep
         {
             RecipeId = recipeId,
             StepNumber = stepNumber,
+            Title = string.IsNullOrWhiteSpace(title) ? $"Bước {stepNumber}" : title.Trim(),
             Description = description,
             DurationMinutes = durationMinutes,
             ImageUrl = imageUrl
         };
     }
 
-    public void Update(string description, int? durationMinutes = null, string? imageUrl = null)
+    public void Update(string description, string? title = null, int? durationMinutes = null, string? imageUrl = null)
     {
+        Title = string.IsNullOrWhiteSpace(title) ? $"Bước {StepNumber}" : title.Trim();
         Description = description;
         DurationMinutes = durationMinutes;
         ImageUrl = imageUrl;

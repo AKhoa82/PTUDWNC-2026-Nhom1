@@ -44,8 +44,9 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
             request.RecipeId,
             nextStepNumber,
             request.Description,
-            request.DurationMinutes,
-            request.ImageUrl
+            title: request.Title,
+            durationMinutes: request.DurationMinutes,
+            imageUrl: request.ImageUrl
         );
 
         recipe.Steps.Add(step);
@@ -56,6 +57,7 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
         {
             Id = step.Id,
             StepNumber = step.StepNumber,
+            Title = step.Title,
             Description = step.Description,
             DurationMinutes = step.DurationMinutes,
             ImageUrl = step.ImageUrl
