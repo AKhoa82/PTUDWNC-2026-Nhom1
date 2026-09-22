@@ -9,6 +9,7 @@ using CulinaryBlog.Application.Features.Categories.GetCategories;
 using CulinaryBlog.Application.Features.Categories.Queries.GetCategoryBySlug;
 using CulinaryBlog.Application.Features.Recipes.GetRecipes;
 using CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
+using CulinaryBlog.Application.Features.Recipes.Queries.GetRecipeBySlug;
 using MediatR;
 using Npgsql;
 using Scalar.AspNetCore;
@@ -43,6 +44,11 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
     options.InstanceName = "CulinaryBlog:";
 });
+builder.Services.AddOutputCache(options =>
+{
+    options.AddPolicy("RecipeDetail", builder => 
+        builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
+});
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -55,6 +61,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
+app.UseOutputCache();
 
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
@@ -180,9 +187,33 @@ app.MapGet("/api/v1/recipes", async (
 .WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
 .AllowAnonymous();
 
+app.MapGet("/api/v1/recipes/{slug}", async (
+    string slug,
+    IMediator mediator,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await mediator.Send(new GetRecipeBySlugQuery(slug), cancellationToken);
+
+        return result is not null 
+            ? Results.Ok(result) 
+            : Results.NotFound(new { message = "Không tìm thấy công thức này." });
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        return Results.Problem(statusCode: 403, detail: ex.Message);
+    }
+})
+.WithName("GetRecipeBySlugV1")
+.WithSummary("FR-RCP-002 – Xem chi tiết công thức")
+.CacheOutput("RecipeDetail")
+.AllowAnonymous();
+
 app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
+    Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore,
     CancellationToken cancellationToken) =>
 {
     var validationResults = new List<ValidationResult>();
@@ -214,6 +245,8 @@ app.MapPost("/api/v1/recipes", async (
         var recipeId = await mediator.Send(
             new CreateRecipeCommand(request, authorId),
             cancellationToken);
+
+        await cacheStore.EvictByTagAsync("recipes", cancellationToken);
 
         return Results.Created($"/api/v1/recipes/{recipeId}", new
         {
