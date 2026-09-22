@@ -37,7 +37,10 @@ export default function LoginPage() {
         body: JSON.stringify(values),
       });
       const responseText = await response.text();
-      let data: { message?: string } = {};
+      let data: {
+        message?: string;
+        user?: { accessToken?: string; refreshToken?: string; accessTokenExpiresAt?: string };
+      } = {};
 
       if (responseText.trim()) {
         try {
@@ -50,6 +53,8 @@ export default function LoginPage() {
       if (!response.ok) {
         const message = response.status === 401
           ? "Email hoặc mật khẩu không đúng."
+          : response.status === 423
+            ? "Tài khoản đã bị khóa trong 15 phút do nhập sai quá nhiều lần."
           : response.status === 503
             ? "Cơ sở dữ liệu đang tạm thời không khả dụng. Vui lòng thử lại sau."
             : data.message ?? "Đăng nhập không thành công. Vui lòng thử lại.";
@@ -57,6 +62,13 @@ export default function LoginPage() {
         throw new Error(message);
       }
 
+      if (data.user?.accessToken && data.user.refreshToken) {
+        localStorage.setItem("accessToken", data.user.accessToken);
+        localStorage.setItem("refreshToken", data.user.refreshToken);
+        if (data.user.accessTokenExpiresAt) {
+          localStorage.setItem("accessTokenExpiresAt", data.user.accessTokenExpiresAt);
+        }
+      }
       setSuccessMessage(data.message ?? "Đăng nhập thành công.");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Không thể kết nối đến máy chủ.");

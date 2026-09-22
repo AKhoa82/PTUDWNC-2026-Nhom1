@@ -9,14 +9,14 @@ namespace CulinaryBlog.Application.Features.Auth.Register;
 public class RegisterCommandHandler : IRequestHandler<RegisterCommand, Guid>
 {
     private readonly IApplicationDbContext _context;
-    private readonly IPasswordHasher<User> _passwordHasher;
+    private readonly UserManager<User> _userManager;
 
     public RegisterCommandHandler(
         IApplicationDbContext context,
-        IPasswordHasher<User> passwordHasher)
+        UserManager<User> userManager)
     {
         _context = context;
-        _passwordHasher = passwordHasher;
+        _userManager = userManager;
     }
 
     public async Task<Guid> Handle(
@@ -28,13 +28,13 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, Guid>
 
         var existingUser = await _context.Users
             .FirstOrDefaultAsync(
-                u => u.Email.ToLower() == email || u.Username.ToLower() == username,
+                u => u.Email!.ToLower() == email || u.UserName!.ToLower() == username,
                 cancellationToken);
 
         if (existingUser is not null)
         {
             throw new InvalidOperationException(
-                existingUser.Email.ToLower() == email
+                    existingUser.Email!.ToLower() == email
                     ? "Email đã được sử dụng."
                     : "Tên định danh đã được sử dụng.");
         }
@@ -42,19 +42,18 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, Guid>
         var user = new User
         {
             Id = Guid.NewGuid(),
-            Username = username,
+            UserName = username,
             Email = email,
             FullName = request.Request.FullName.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
-        user.PasswordHash = _passwordHasher.HashPassword(
-            user,
-            request.Request.Password);
-
-        _context.Users.Add(user);
-
-        await _context.SaveChangesAsync(cancellationToken);
+        var result = await _userManager.CreateAsync(user, request.Request.Password);
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(
+                string.Join(" ", result.Errors.Select(error => error.Description)));
+        }
 
         return user.Id;
     }

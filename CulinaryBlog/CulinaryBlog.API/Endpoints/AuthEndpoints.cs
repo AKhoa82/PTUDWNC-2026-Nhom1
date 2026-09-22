@@ -1,13 +1,12 @@
-using System.ComponentModel.DataAnnotations;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Login;
 using CulinaryBlog.Application.Features.Auth.Register;
 using CulinaryBlog.Domain.Entities;
 using MediatR;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using FluentValidation;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -27,29 +26,6 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var validationResults = new List<ValidationResult>();
-        var validationContext = new ValidationContext(request);
-
-        if (!Validator.TryValidateObject(
-                request,
-                validationContext,
-                validationResults,
-                validateAllProperties: true))
-        {
-            var errors = validationResults
-                .GroupBy(
-                    result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                    StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group
-                        .Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.")
-                        .ToArray(),
-                    StringComparer.OrdinalIgnoreCase);
-
-            return Results.ValidationProblem(errors);
-        }
-
         try
         {
             var response = await mediator.Send(
@@ -61,6 +37,16 @@ public static class AuthEndpoints
                 message = "Đăng nhập thành công.",
                 user = response
             });
+        }
+        catch (AccountLockedException)
+        {
+            return Results.StatusCode(StatusCodes.Status423Locked);
+        }
+        catch (ValidationException ex)
+        {
+            return Results.ValidationProblem(ex.Errors
+                .GroupBy(error => error.PropertyName)
+                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()));
         }
         catch (UnauthorizedAccessException)
         {
@@ -80,29 +66,6 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var validationResults = new List<ValidationResult>();
-        var validationContext = new ValidationContext(request);
-
-        if (!Validator.TryValidateObject(
-                request,
-                validationContext,
-                validationResults,
-                validateAllProperties: true))
-        {
-            var errors = validationResults
-                .GroupBy(
-                    result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                    StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group
-                        .Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.")
-                        .ToArray(),
-                    StringComparer.OrdinalIgnoreCase);
-
-            return Results.ValidationProblem(errors);
-        }
-
         try
         {
             var userId = await mediator.Send(
