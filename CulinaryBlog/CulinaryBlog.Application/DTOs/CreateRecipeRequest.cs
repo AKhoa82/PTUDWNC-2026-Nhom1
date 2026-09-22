@@ -16,7 +16,7 @@ public class CreateRecipeRequest
     [Range(0, 1000, ErrorMessage = "Thời gian chuẩn bị không hợp lệ")]
     public int PrepTimeMinutes { get; set; }
 
-    [Range(1, 1000, ErrorMessage = "Thời gian nấu không hợp lệ")]
+    [Range(0, 1000, ErrorMessage = "Thời gian nấu không hợp lệ")]
     public int CookingTimeMinutes { get; set; }
 
     [Range(1, 100, ErrorMessage = "Số khẩu phần ăn không hợp lệ")]

@@ -101,6 +101,7 @@ app.UseAuthorization();
 app.UseOutputCache();
 
 app.MapAuthEndpoints();
+app.MapRecipeIngredientEndpoints();
 
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
@@ -181,6 +182,7 @@ app.MapGet("/api/categories/{slug}", async (
 // FR-RCP-001: Danh sách công thức (phân trang, lọc, sắp xếp)
 app.MapGet("/api/v1/recipes", async (
     IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
     CancellationToken cancellationToken,
     int page = 1,
     int pageSize = 12,
@@ -210,13 +212,24 @@ app.MapGet("/api/v1/recipes", async (
         parsedDifficulty = diffEnum;
     }
 
+    string? currentUserId = null;
+    bool isAdmin = false;
+    
+    if (user?.Identity?.IsAuthenticated == true)
+    {
+        currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        isAdmin = user.IsInRole("Admin");
+    }
+
     var query = new GetRecipesQuery(
         Page: page,
         PageSize: pageSize,
         CategoryId: categoryId,
         Difficulty: parsedDifficulty,
         MaxCookTime: maxCookTime,
-        Sort: sort
+        Sort: sort,
+        CurrentUserId: currentUserId,
+        IsAdmin: isAdmin
     );
 
     var result = await mediator.Send(query, cancellationToken);
@@ -229,11 +242,20 @@ app.MapGet("/api/v1/recipes", async (
 app.MapGet("/api/v1/recipes/{slug}", async (
     string slug,
     IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
     CancellationToken cancellationToken) =>
 {
     try
     {
-        var result = await mediator.Send(new GetRecipeBySlugQuery(slug), cancellationToken);
+        string? currentUserId = null;
+        bool isAdmin = false;
+        if (user?.Identity?.IsAuthenticated == true)
+        {
+            currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            isAdmin = user.IsInRole("Admin");
+        }
+
+        var result = await mediator.Send(new GetRecipeBySlugQuery(slug, currentUserId, isAdmin), cancellationToken);
 
         return result is not null 
             ? Results.Ok(result) 
@@ -252,6 +274,7 @@ app.MapGet("/api/v1/recipes/{slug}", async (
 app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
     Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore,
     CancellationToken cancellationToken) =>
 {
@@ -273,13 +296,16 @@ app.MapPost("/api/v1/recipes", async (
                 group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
                 StringComparer.OrdinalIgnoreCase);
             
-        return Results.ValidationProblem(errors);
+        return Results.ValidationProblem(errors, statusCode: 422);
     }
     
     try
     {
-        // Lấy AuthorId từ Token (Giả lập tạm thời nếu FR-AUTH chưa gắn)
         string? authorId = null;
+        if (user?.Identity?.IsAuthenticated == true)
+        {
+            authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        }
 
         var recipeId = await mediator.Send(
             new CreateRecipeCommand(request, authorId),
