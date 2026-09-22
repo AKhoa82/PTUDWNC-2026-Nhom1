@@ -7,6 +7,7 @@ using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Register;
 using CulinaryBlog.Application.Features.Categories.GetCategories;
 using CulinaryBlog.Application.Features.Categories.Queries.GetCategoryBySlug;
+using CulinaryBlog.Application.Features.Categories.Commands.CreateCategory;
 using CulinaryBlog.Application.Features.Recipes.GetRecipes;
 using CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 using CulinaryBlog.Application.Features.Recipes.Queries.GetRecipeBySlug;
@@ -63,6 +64,8 @@ app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.UseOutputCache();
 
+// ==================== AUTH ENDPOINTS ====================
+
 app.MapPost("/api/auth/register", async (
     RegisterRequest request,
     IMediator mediator,
@@ -114,6 +117,9 @@ app.MapPost("/api/auth/register", async (
     }
 });
 
+// ==================== CATEGORIES ENDPOINTS ====================
+
+// FR-CAT-001: Lấy danh sách danh mục
 app.MapGet("/api/v1/categories", async (
     IMediator mediator,
     CancellationToken cancellationToken) =>
@@ -125,6 +131,7 @@ app.MapGet("/api/v1/categories", async (
 .WithSummary("Lấy danh sách danh mục (CQRS + Redis Cache, TTL 60 phút)")
 .AllowAnonymous();
 
+// FR-CAT-002: Lấy chi tiết danh mục theo Slug
 app.MapGet("/api/categories/{slug}", async (
     string slug,
     IMediator mediator,
@@ -138,6 +145,55 @@ app.MapGet("/api/categories/{slug}", async (
 })
 .WithName("GetCategoryBySlug")
 .WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
+
+// FR-CAT-003: Tạo danh mục mới (Admin)
+app.MapPost("/api/v1/admin/categories", async (
+    CreateCategoryRequest request,
+    IMediator mediator,
+    CancellationToken cancellationToken) =>
+{
+    var validationResults = new List<ValidationResult>();
+    var validationContext = new ValidationContext(request);
+
+    if (!Validator.TryValidateObject(
+        request,
+        validationContext,
+        validationResults,
+        validateAllProperties: true))
+    {
+        var errors = validationResults
+            .GroupBy(
+                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return Results.ValidationProblem(errors);
+    }
+
+    try
+    {
+        var categoryId = await mediator.Send(
+            new CreateCategoryCommand(request),
+            cancellationToken);
+
+        return Results.Created($"/api/v1/categories/{categoryId}", new
+        {
+            message = "Tạo danh mục thành công.",
+            id = categoryId
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { message = ex.Message });
+    }
+})
+.WithName("CreateCategoryAdminV1")
+.WithSummary("FR-CAT-003 – Tạo danh mục mới (Admin)");
+
+// ==================== RECIPES ENDPOINTS ====================
 
 // FR-RCP-001: Danh sách công thức (phân trang, lọc, sắp xếp)
 app.MapGet("/api/v1/recipes", async (
@@ -187,6 +243,7 @@ app.MapGet("/api/v1/recipes", async (
 .WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
 .AllowAnonymous();
 
+// FR-RCP-002: Xem chi tiết công thức
 app.MapGet("/api/v1/recipes/{slug}", async (
     string slug,
     IMediator mediator,
@@ -210,6 +267,7 @@ app.MapGet("/api/v1/recipes/{slug}", async (
 .CacheOutput("RecipeDetail")
 .AllowAnonymous();
 
+// FR-RCP-003: Tạo công thức nấu ăn mới
 app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
@@ -262,6 +320,8 @@ app.MapPost("/api/v1/recipes", async (
 .WithName("CreateRecipeV1")
 .WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
 
+// ==================== DATABASE SEEDING ====================
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -287,87 +347,87 @@ using (var scope = app.Services.CreateScope())
         dbContext.Recipes.AddRange(
             new Recipe
             {
-                Title              = "Phở Bò Hà Nội",
-                Slug               = "pho-bo-ha-noi",
-                Description        = "Phở bò truyền thống Hà Nội với nước dùng trong vắt, thơm mùi quế hồi.",
-                ImageUrl           = "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?w=800",
-                PrepTimeMinutes    = 30,
-                CookingTimeMinutes = 180,
-                Servings           = 4,
-                Difficulty         = RecipeDifficulty.Hard,
-                Status             = RecipeStatus.Published,
-                CategoryId         = monVietId,
-                PublishedAt        = DateTime.UtcNow
+                Title               = "Phở Bò Hà Nội",
+                Slug                = "pho-bo-ha-noi",
+                Description         = "Phở bò truyền thống Hà Nội với nước dùng trong vắt, thơm mùi quế hồi.",
+                ImageUrl            = "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?w=800",
+                PrepTimeMinutes     = 30,
+                CookingTimeMinutes  = 180,
+                Servings            = 4,
+                Difficulty          = RecipeDifficulty.Hard,
+                Status              = RecipeStatus.Published,
+                CategoryId          = monVietId,
+                PublishedAt         = DateTime.UtcNow
             },
             new Recipe
             {
-                Title              = "Bún Bò Huế",
-                Slug               = "bun-bo-hue",
-                Description        = "Bún bò Huế cay nồng đặc trưng miền Trung, nước dùng đậm đà.",
-                ImageUrl           = "https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=800",
-                PrepTimeMinutes    = 20,
-                CookingTimeMinutes = 120,
-                Servings           = 4,
-                Difficulty         = RecipeDifficulty.Medium,
-                Status             = RecipeStatus.Published,
-                CategoryId         = monVietId,
-                PublishedAt        = DateTime.UtcNow
+                Title               = "Bún Bò Huế",
+                Slug                = "bun-bo-hue",
+                Description         = "Bún bò Huế cay nồng đặc trưng miền Trung, nước dùng đậm đà.",
+                ImageUrl            = "https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?w=800",
+                PrepTimeMinutes     = 20,
+                CookingTimeMinutes  = 120,
+                Servings            = 4,
+                Difficulty          = RecipeDifficulty.Medium,
+                Status              = RecipeStatus.Published,
+                CategoryId          = monVietId,
+                PublishedAt         = DateTime.UtcNow
             },
             new Recipe
             {
-                Title              = "Cơm Chiên Dương Châu",
-                Slug               = "com-chien-duong-chau",
-                Description        = "Cơm chiên kiểu Dương Châu với tôm, trứng và rau củ đầy màu sắc.",
-                ImageUrl           = "https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=800",
-                PrepTimeMinutes    = 15,
-                CookingTimeMinutes = 20,
-                Servings           = 2,
-                Difficulty         = RecipeDifficulty.Easy,
-                Status             = RecipeStatus.Published,
-                CategoryId         = monAId,
-                PublishedAt        = DateTime.UtcNow
+                Title               = "Cơm Chiên Dương Châu",
+                Slug                = "com-chien-duong-chau",
+                Description         = "Cơm chiên kiểu Dương Châu với tôm, trứng và rau củ đầy màu sắc.",
+                ImageUrl            = "https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=800",
+                PrepTimeMinutes     = 15,
+                CookingTimeMinutes  = 20,
+                Servings            = 2,
+                Difficulty          = RecipeDifficulty.Easy,
+                Status              = RecipeStatus.Published,
+                CategoryId          = monAId,
+                PublishedAt         = DateTime.UtcNow
             },
             new Recipe
             {
-                Title              = "Mì Ramen Nhật Bản",
-                Slug               = "mi-ramen-nhat-ban",
-                Description        = "Ramen tonkotsu nước dùng xương heo hầm 12 tiếng, chashu mềm tan.",
-                ImageUrl           = "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800",
-                PrepTimeMinutes    = 60,
-                CookingTimeMinutes = 720,
-                Servings           = 2,
-                Difficulty         = RecipeDifficulty.Expert,
-                Status             = RecipeStatus.Published,
-                CategoryId         = monAId,
-                PublishedAt        = DateTime.UtcNow
+                Title               = "Mì Ramen Nhật Bản",
+                Slug                = "mi-ramen-nhat-ban",
+                Description         = "Ramen tonkotsu nước dùng xương heo hầm 12 tiếng, chashu mềm tan.",
+                ImageUrl            = "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800",
+                PrepTimeMinutes     = 60,
+                CookingTimeMinutes  = 720,
+                Servings            = 2,
+                Difficulty          = RecipeDifficulty.Expert,
+                Status              = RecipeStatus.Published,
+                CategoryId          = monAId,
+                PublishedAt         = DateTime.UtcNow
             },
             new Recipe
             {
-                Title              = "Pasta Carbonara",
-                Slug               = "pasta-carbonara",
-                Description        = "Pasta kiểu Ý cổ điển với trứng, pecorino romano và guanciale giòn rụm.",
-                ImageUrl           = "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=800",
-                PrepTimeMinutes    = 10,
-                CookingTimeMinutes = 20,
-                Servings           = 2,
-                Difficulty         = RecipeDifficulty.Medium,
-                Status             = RecipeStatus.Published,
-                CategoryId         = monAuId,
-                PublishedAt        = DateTime.UtcNow
+                Title               = "Pasta Carbonara",
+                Slug                = "pasta-carbonara",
+                Description         = "Pasta kiểu Ý cổ điển với trứng, pecorino romano và guanciale giòn rụm.",
+                ImageUrl            = "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=800",
+                PrepTimeMinutes     = 10,
+                CookingTimeMinutes  = 20,
+                Servings            = 2,
+                Difficulty          = RecipeDifficulty.Medium,
+                Status              = RecipeStatus.Published,
+                CategoryId          = monAuId,
+                PublishedAt         = DateTime.UtcNow
             },
             new Recipe
             {
-                Title              = "Beef Steak Bơ Tỏi",
-                Slug               = "beef-steak-bo-toi",
-                Description        = "Bít tết bò thăn áp chảo áo bơ tỏi thơm lừng, chín tái hoàn hảo.",
-                ImageUrl           = "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=800",
-                PrepTimeMinutes    = 10,
-                CookingTimeMinutes = 15,
-                Servings           = 1,
-                Difficulty         = RecipeDifficulty.Medium,
-                Status             = RecipeStatus.Published,
-                CategoryId         = monAuId,
-                PublishedAt        = DateTime.UtcNow
+                Title               = "Beef Steak Bơ Tỏi",
+                Slug                = "beef-steak-bo-toi",
+                Description         = "Bít tết bò thăn áp chảo áo bơ tỏi thơm lừng, chín tái hoàn hảo.",
+                ImageUrl            = "https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=800",
+                PrepTimeMinutes     = 10,
+                CookingTimeMinutes  = 15,
+                Servings            = 1,
+                Difficulty          = RecipeDifficulty.Medium,
+                Status              = RecipeStatus.Published,
+                CategoryId          = monAuId,
+                PublishedAt         = DateTime.UtcNow
             }
         );
 
