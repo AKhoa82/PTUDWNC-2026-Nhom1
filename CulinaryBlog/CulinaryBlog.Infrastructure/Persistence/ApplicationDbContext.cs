@@ -14,6 +14,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     }
 
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<StoredFile> StoredFiles => Set<StoredFile>();
     public new DbSet<User> Users => Set<User>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

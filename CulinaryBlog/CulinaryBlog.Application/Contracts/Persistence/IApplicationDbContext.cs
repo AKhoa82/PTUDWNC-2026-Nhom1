@@ -5,6 +5,7 @@ namespace CulinaryBlog.Application.Contracts.Persistence;
 
 public interface IApplicationDbContext
 {
+    DbSet<StoredFile> StoredFiles { get; }
     DbSet<User> Users { get; }
     DbSet<Category> Categories { get; }
     DbSet<Recipe> Recipes { get; }

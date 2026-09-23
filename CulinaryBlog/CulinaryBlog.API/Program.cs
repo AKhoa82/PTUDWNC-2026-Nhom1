@@ -22,6 +22,7 @@ using Npgsql;
 using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,6 +86,8 @@ builder.Services.AddOutputCache(options =>
         builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
 });
 builder.Services.AddOpenApi();
+builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddFileEndpoints();
 
 var app = builder.Build();
 
@@ -98,9 +101,12 @@ app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
+app.UseFileRequestLimits();
 app.UseOutputCache();
 
 app.MapAuthEndpoints();
+app.MapFileEndpoints();
 app.MapRecipeIngredientEndpoints();
 app.MapRecipeStepEndpoints();
 
