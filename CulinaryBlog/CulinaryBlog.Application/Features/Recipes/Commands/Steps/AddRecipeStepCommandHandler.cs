@@ -50,7 +50,7 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
         );
 
         recipe.Steps.Add(step);
-        
+        _context.RecipeSteps.Add(step);
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RecipeStepDto

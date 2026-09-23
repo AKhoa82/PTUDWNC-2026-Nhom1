@@ -13,16 +13,10 @@ public class CreateRecipeCommandValidator : AbstractValidator<CreateRecipeComman
         RuleFor(x => x.Request.CategoryId)
             .NotEmpty().WithMessage("Danh mục không được để trống.");
 
-        // Ràng buộc FR-RCP-009: Bắt buộc phải có ít nhất 1 nguyên liệu
         RuleFor(x => x.Request.Ingredients)
-            .NotEmpty().WithMessage("Danh sách nguyên liệu không được để trống.")
-            .Must(ingredients => ingredients != null && ingredients.Count > 0)
-            .WithMessage("Công thức phải có ít nhất 1 nguyên liệu.");
+            .NotNull().WithMessage("Danh sách nguyên liệu không được để null.");
 
-        // Ràng buộc FR-RCP-010: Bắt buộc phải có ít nhất 1 bước thực hiện
         RuleFor(x => x.Request.Steps)
-            .NotEmpty().WithMessage("Danh sách các bước thực hiện không được để trống.")
-            .Must(steps => steps != null && steps.Count > 0)
-            .WithMessage("Công thức phải có ít nhất 1 bước thực hiện.");
+            .NotNull().WithMessage("Danh sách các bước thực hiện không được để null.");
     }
 }
