@@ -6,6 +6,7 @@ using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using FluentValidation;
 
 namespace CulinaryBlog.Application.Features.Recipes.GetRecipes;
 
@@ -26,6 +27,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         GetRecipesQuery request,
         CancellationToken cancellationToken)
     {
+        await new GetRecipesQueryValidator().ValidateAndThrowAsync(request, cancellationToken);
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
         var cacheKey = BuildCacheKey(request);
         
@@ -77,7 +79,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
         var totalCount = await query.CountAsync(cancellationToken);
 
-        query = request.Sort switch
+        var orderedQuery = request.Sort switch
         {
             "createdAt"    => query.OrderBy(r => r.CreatedAt),
             "-createdAt"   => query.OrderByDescending(r => r.CreatedAt),
@@ -90,9 +92,12 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             _              => query.OrderByDescending(r => r.CreatedAt)
         };
 
-        var skip = (request.Page - 1) * request.PageSize;
+        // A unique tie-breaker keeps equal sort values on consistent pages.
+        // CountAsync returns an int, so offsets above int.MaxValue are always empty.
+        var skip = (int)Math.Min((long)(request.Page - 1) * request.PageSize, int.MaxValue);
 
-        var items = await query
+        var items = await orderedQuery
+            .ThenBy(r => r.Id)
             .Skip(skip)
             .Take(request.PageSize)
             .Select(r => new RecipeSummaryDto
