@@ -8,6 +8,7 @@ namespace CulinaryBlog.Application.Features.Recipes.GetRecipes;
 public record GetRecipesQuery(
     int Page = 1,
     int PageSize = 12,
+    string? Keyword = null,
     Guid? CategoryId = null,
     RecipeDifficulty? Difficulty = null,
     int? MaxCookTime = null,

@@ -104,57 +104,6 @@ app.MapAuthEndpoints();
 app.MapRecipeIngredientEndpoints();
 app.MapRecipeStepEndpoints();
 
-app.MapPost("/api/auth/register", async (
-    RegisterRequest request,
-    IMediator mediator,
-    CancellationToken cancellationToken) =>
-{
-    var validationResults = new List<ValidationResult>();
-    var validationContext = new ValidationContext(request);
-
-    if (!Validator.TryValidateObject(
-            request,
-            validationContext,
-            validationResults,
-            validateAllProperties: true))
-    {
-        var errors = validationResults
-            .GroupBy(
-                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.")
-                    .ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-
-        return Results.ValidationProblem(errors);
-    }
-
-    try
-    {
-        var userId = await mediator.Send(
-            new RegisterCommand(request),
-            cancellationToken);
-
-        return Results.Ok(new
-        {
-            message = "Đăng ký thành công.",
-            userId
-        });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.Conflict(new { message = ex.Message });
-    }
-    catch (DbUpdateException ex) when (
-        ex.InnerException is PostgresException { SqlState: "23505" })
-    {
-        return Results.Conflict(new { message = "Email đã được sử dụng." });
-    }
-});
-
 app.MapGet("/api/v1/categories", async (
     IMediator mediator,
     CancellationToken cancellationToken) =>
@@ -187,6 +136,7 @@ app.MapGet("/api/v1/recipes", async (
     CancellationToken cancellationToken,
     int page = 1,
     int pageSize = 12,
+    string? keyword = null,
     Guid? categoryId = null,
     string? difficulty = null,
     int? maxCookTime = null,
@@ -225,6 +175,7 @@ app.MapGet("/api/v1/recipes", async (
     var query = new GetRecipesQuery(
         Page: page,
         PageSize: pageSize,
+        Keyword: keyword?.Trim(),
         CategoryId: categoryId,
         Difficulty: parsedDifficulty,
         MaxCookTime: maxCookTime,

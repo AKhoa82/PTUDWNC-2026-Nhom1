@@ -19,4 +19,7 @@ public class RecipeDetailDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
+
+    public List<IngredientDto> Ingredients { get; set; } = new();
+    public List<RecipeStepDto> Steps { get; set; } = new();
 }

@@ -20,6 +20,8 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
         var recipe = await _context.Recipes
             .AsNoTracking()
             .Include(r => r.Category)
+            .Include(r => r.Ingredients)
+            .Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Slug == request.Slug, cancellationToken);
 
         if (recipe is null)
@@ -53,7 +55,31 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             AuthorId = recipe.AuthorId,
             CreatedAt = recipe.CreatedAt,
             UpdatedAt = recipe.UpdatedAt,
-            PublishedAt = recipe.PublishedAt
+            PublishedAt = recipe.PublishedAt,
+
+            Ingredients = recipe.Ingredients
+                .OrderBy(i => i.SortOrder)
+                .Select(i => new IngredientDto
+                {
+                    Id = i.Id,
+                    Name = i.Name,
+                    Quantity = i.Quantity,
+                    Unit = i.Unit,
+                    Notes = i.Notes,
+                    SortOrder = i.SortOrder
+                }).ToList(),
+
+            Steps = recipe.Steps
+                .OrderBy(s => s.StepNumber)
+                .Select(s => new RecipeStepDto
+                {
+                    Id = s.Id,
+                    StepNumber = s.StepNumber,
+                    Title = s.Title,
+                    Description = s.Description,
+                    DurationMinutes = s.DurationMinutes,
+                    ImageUrl = s.ImageUrl
+                }).ToList()
         };
     }
 }

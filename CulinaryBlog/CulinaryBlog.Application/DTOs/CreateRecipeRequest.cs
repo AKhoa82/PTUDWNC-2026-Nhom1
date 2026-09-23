@@ -29,4 +29,7 @@ public class CreateRecipeRequest
 
     [Required]
     public Guid CategoryId { get; set; }
+
+    public List<CreateIngredientRequestDto> Ingredients { get; set; } = new();
+    public List<CreateStepRequestDto> Steps { get; set; } = new();
 }

@@ -26,13 +26,17 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         GetRecipesQuery request,
         CancellationToken cancellationToken)
     {
+        bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
         var cacheKey = BuildCacheKey(request);
-        var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
-        if (!string.IsNullOrEmpty(cachedJson))
+        
+        if (shouldCache)
         {
-            var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
-            if (cached is not null)
-                return cached;
+            var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
+            if (!string.IsNullOrEmpty(cachedJson))
+            {
+                var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
+                if (cached is not null) return cached;
+            }
         }
 
         var query = _context.Recipes
@@ -52,6 +56,14 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             {
                 query = query.Where(r => r.Status == RecipeStatus.Published);
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.ToLower();
+            query = query.Where(r => 
+                r.Title.ToLower().Contains(keyword) || 
+                (r.Description != null && r.Description.ToLower().Contains(keyword)));
         }
 
         if (request.CategoryId.HasValue)
@@ -106,15 +118,18 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
         var result = PagedResult<RecipeSummaryDto>.Create(items, totalCount, request.Page, request.PageSize);
 
-        var cacheOptions = new DistributedCacheEntryOptions
+        if (shouldCache)
         {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
-        };
-        await _cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(result),
-            cacheOptions,
-            cancellationToken);
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
+            };
+            await _cache.SetStringAsync(
+                cacheKey,
+                JsonSerializer.Serialize(result),
+                cacheOptions,
+                cancellationToken);
+        }
 
         return result;
     }
@@ -126,6 +141,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             : "anon";
 
         return $"{CacheKeyPrefix}p{q.Page}_ps{q.PageSize}" +
+               $"_kw{q.Keyword}" +
                $"_cid{q.CategoryId}" +
                $"_{q.Difficulty}" +
                $"_max{q.MaxCookTime}" +

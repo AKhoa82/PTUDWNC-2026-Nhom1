@@ -3,6 +3,8 @@ using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
+using System.Globalization;
+using System.Text;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 
@@ -45,7 +47,27 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             Status = RecipeStatus.Draft, // Mặc định khi mới tạo là Draft
             CategoryId = request.Request.CategoryId,
             AuthorId = request.AuthorId,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+
+            // MAP DANH SÁCH NGUYÊN LIỆU
+            Ingredients = request.Request.Ingredients.Select(i => RecipeIngredient.Create(
+                recipeId: default, // Sẽ tự liên kết khi recipe được thêm vào DbContext
+                name: i.Name,
+                quantity: i.Quantity,
+                unit: i.Unit,
+                notes: i.Notes,
+                sortOrder: i.SortOrder
+            )).ToList(),
+
+            // MAP DANH SÁCH CÁC BƯỚC THỰC HIỆN
+            Steps = request.Request.Steps.Select((s, index) => RecipeStep.Create(
+                recipeId: default,
+                stepNumber: index + 1, // Tự động đánh số thứ tự các bước từ 1
+                description: s.Description,
+                title: s.Title,
+                durationMinutes: s.DurationMinutes,
+                imageUrl: s.ImageUrl
+            )).ToList()
         };
 
         // 4. Lưu vào DB
@@ -57,7 +79,21 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
 
     private async Task<string> GenerateUniqueSlugAsync(string title, CancellationToken cancellationToken) 
     {
-        var baseSlug = title.ToLowerInvariant().Trim();
+        // 1. Chuyển tiếng Việt có dấu thành không dấu
+        var normalizedString = title.Normalize(NormalizationForm.FormD);
+        var stringBuilder = new StringBuilder();
+        foreach (var c in normalizedString)
+        {
+            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (unicodeCategory != UnicodeCategory.NonSpacingMark)
+            {
+                stringBuilder.Append(c);
+            }
+        }
+        var slugWithoutAccents = stringBuilder.ToString().Normalize(NormalizationForm.FormC);
+
+        // 2. Format chuẩn slug (lowercase, bỏ ký tự đặc biệt, thay khoảng trắng bằng dấu gạch ngang)
+        var baseSlug = slugWithoutAccents.ToLowerInvariant().Trim();
         baseSlug = Regex.Replace(baseSlug, @"[^a-z0-9\s-]", "");
         baseSlug = Regex.Replace(baseSlug, @"\s+", "-").Trim('-');
         
