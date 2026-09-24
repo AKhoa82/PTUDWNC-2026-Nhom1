@@ -9,7 +9,7 @@ public static class RecipeStepEndpoints
     public static void MapRecipeStepEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/recipes/{id}/steps")
-            .RequireAuthorization("VerifiedAuthor"); // Or standard Author depending on policy
+            .RequireAuthorization();
 
         group.MapPost("/", async (Guid id, [FromBody] AddRecipeStepCommand command, System.Security.Claims.ClaimsPrincipal user, IMediator mediator) =>
         {
