@@ -45,6 +45,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResponseDto
         }
 
         await _userManager.ResetAccessFailedCountAsync(user);
+        var roles = await _userManager.GetRolesAsync(user);
         var now = DateTime.UtcNow;
         var refreshToken = _jwtService.GenerateRefreshToken();
         _context.RefreshTokens.Add(new RefreshToken
@@ -56,7 +57,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResponseDto
 
         return new AuthResponseDto(
             user.Id, user.UserName ?? string.Empty, user.FullName, user.Email ?? string.Empty,
-            _jwtService.GenerateAccessToken(user), refreshToken,
+            _jwtService.GenerateAccessToken(user, roles), refreshToken,
             now.AddMinutes(15), now.AddDays(7));
     }
 }

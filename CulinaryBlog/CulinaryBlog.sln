@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CulinaryBlog.Infrastructure
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CulinaryBlog.API", "CulinaryBlog.API\CulinaryBlog.API.csproj", "{A43674C1-DB8A-4C4A-B839-09F1D14CFCA8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CulinaryBlog.Tests", "CulinaryBlog.Tests\CulinaryBlog.Tests.csproj", "{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,18 @@ Global
 		{A43674C1-DB8A-4C4A-B839-09F1D14CFCA8}.Release|x64.Build.0 = Release|Any CPU
 		{A43674C1-DB8A-4C4A-B839-09F1D14CFCA8}.Release|x86.ActiveCfg = Release|Any CPU
 		{A43674C1-DB8A-4C4A-B839-09F1D14CFCA8}.Release|x86.Build.0 = Release|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Debug|x64.Build.0 = Debug|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Debug|x86.Build.0 = Debug|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Release|x64.ActiveCfg = Release|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Release|x64.Build.0 = Release|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Release|x86.ActiveCfg = Release|Any CPU
+		{FE6FB5B1-5BB6-4E18-AE2D-544CC7EA1B4B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

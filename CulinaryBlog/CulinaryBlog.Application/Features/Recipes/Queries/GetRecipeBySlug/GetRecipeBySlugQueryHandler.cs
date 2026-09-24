@@ -22,6 +22,7 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             .Include(r => r.Category)
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
+            .Include(r => r.Images)
             .FirstOrDefaultAsync(r => r.Slug == request.Slug, cancellationToken);
 
         if (recipe is null)
@@ -79,7 +80,15 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
                     Description = s.Description,
                     DurationMinutes = s.DurationMinutes,
                     ImageUrl = s.ImageUrl
-                }).ToList()
+                }).ToList(),
+
+            Images = recipe.Images
+                .OrderBy(image => image.OrderIndex)
+                .ThenBy(image => image.Id)
+                .Select(image => new RecipeImageDto(
+                    image.Id, image.OriginalUrl, image.MediumUrl, image.ThumbnailUrl,
+                    image.AltText, image.IsPrimary, image.OrderIndex))
+                .ToList()
         };
     }
 }

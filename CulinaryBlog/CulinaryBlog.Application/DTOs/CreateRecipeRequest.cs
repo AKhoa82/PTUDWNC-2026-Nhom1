@@ -11,7 +11,8 @@ public class CreateRecipeRequest
 
     public string? Description { get; set; }
 
-    public string? ImageUrl { get; set; } 
+    [MaxLength(500)]
+    public string? ImageUrl { get; set; }
 
     [Range(0, 1000, ErrorMessage = "Thời gian chuẩn bị không hợp lệ")]
     public int PrepTimeMinutes { get; set; }

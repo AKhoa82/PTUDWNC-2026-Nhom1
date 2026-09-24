@@ -19,6 +19,11 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
 
     public async Task<Guid> Handle(CreateRecipeCommand request, CancellationToken cancellationToken) 
     {
+        if (!Guid.TryParse(request.AuthorId, out var actorId) || actorId == Guid.Empty ||
+            !await _context.Users.AnyAsync(x => x.Id == actorId, cancellationToken))
+            throw new UnauthorizedAccessException("A valid authenticated author is required.");
+        if (request.Request.ImageUrl?.Length > 500)
+            throw new ArgumentException("ImageUrl cannot exceed 500 characters.");
         // 1. Kiểm tra Category có tồn tại không
         var categoryExists = await _context.Categories
             .AnyAsync(c => c.Id == request.Request.CategoryId, cancellationToken);
@@ -46,7 +51,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             Instructions = request.Request.Instructions,
             Status = RecipeStatus.Draft, // Mặc định khi mới tạo là Draft
             CategoryId = request.Request.CategoryId,
-            AuthorId = request.AuthorId,
+            AuthorId = actorId.ToString(),
             CreatedAt = DateTime.UtcNow,
 
             // MAP DANH SÁCH NGUYÊN LIỆU
@@ -72,6 +77,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
 
         // 4. Lưu vào DB
         _context.Recipes.Add(recipe);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(cancellationToken);
 
         return recipe.Id;

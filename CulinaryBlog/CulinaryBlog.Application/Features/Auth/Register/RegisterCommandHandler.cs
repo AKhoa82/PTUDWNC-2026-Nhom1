@@ -55,6 +55,13 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, Guid>
                 string.Join(" ", result.Errors.Select(error => error.Description)));
         }
 
+        var roleResult = await _userManager.AddToRoleAsync(user, "Author");
+        if (!roleResult.Succeeded)
+        {
+            await _userManager.DeleteAsync(user);
+            throw new InvalidOperationException(string.Join(" ", roleResult.Errors.Select(error => error.Description)));
+        }
+
         return user.Id;
     }
 }

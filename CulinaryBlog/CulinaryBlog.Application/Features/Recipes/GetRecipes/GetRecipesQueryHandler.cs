@@ -15,6 +15,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
     private readonly IDistributedCache _cache;
 
     public const string CacheKeyPrefix = "recipes:list:";
+    public const string CacheVersionKey = "recipes:list:version";
 
     public GetRecipesQueryHandler(IApplicationDbContext context, IDistributedCache cache)
     {
@@ -31,6 +32,8 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         
         if (shouldCache)
         {
+            var version = await _cache.GetStringAsync(CacheVersionKey, cancellationToken) ?? "0";
+            cacheKey += $":v{version}";
             var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
             if (!string.IsNullOrEmpty(cachedJson))
             {
