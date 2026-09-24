@@ -23,8 +23,33 @@ using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Infrastructure;
+using CulinaryBlog.Infrastructure.Jobs;
+using Hangfire;
 
-var builder = WebApplication.CreateBuilder(args);
+if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
+    (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
+    throw new ArgumentException("Use either --storage-backfill [--apply] or --storage-inventory.");
+var builder = WebApplication.CreateBuilder(args.Where(arg => arg is not ("--storage-backfill" or "--storage-inventory" or "--apply")).ToArray());
+
+if (args.Contains("--storage-backfill") || args.Contains("--storage-inventory"))
+{
+    // Maintenance mode starts neither HTTP endpoints nor background workers.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+    builder.Services.AddDbContext<ApplicationDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    builder.Services.AddInfrastructureServices(builder.Configuration);
+    await using var maintenanceHost = builder.Build();
+    using var maintenanceScope = maintenanceHost.Services.CreateScope();
+    var maintenance = maintenanceScope.ServiceProvider.GetRequiredService<CulinaryBlog.Infrastructure.Services.StorageMaintenanceService>();
+    if (args.Contains("--storage-backfill"))
+        await maintenance.BackfillAsync(args.Contains("--apply"), Console.Out, CancellationToken.None);
+    else await maintenance.InventoryAsync(Console.Out, CancellationToken.None);
+    return;
+}
+
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException("Configure Jwt:Key (at least 32 UTF-8 bytes) using User Secrets or Jwt__Key.");
 
 builder.Services.AddCors(options =>
 {
@@ -43,15 +68,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-                builder.Configuration["Jwt:Key"]!)),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AuthorPolicy", policy => policy.RequireRole("Author", "Admin"));
+    options.AddPolicy("AdminPolicy", policy => policy.RequireRole("Admin"));
+});
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -65,6 +93,7 @@ builder.Services.AddIdentityCore<User>(options =>
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     options.User.RequireUniqueEmail = true;
 })
+    .AddRoles<IdentityRole<Guid>>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 builder.Services.AddScoped<IJwtService, JwtService>();
@@ -78,7 +107,12 @@ builder.Services.AddMediatR(cfg =>
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
-    options.InstanceName = "CulinaryBlog:";
+    options.InstanceName = builder.Configuration["Cache:InstancePrefix"] ?? "CulinaryBlog:";
+});
+builder.Services.AddStackExchangeRedisOutputCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis");
+    options.InstanceName = (builder.Configuration["Cache:InstancePrefix"] ?? "CulinaryBlog:") + "output:";
 });
 builder.Services.AddOutputCache(options =>
 {
@@ -87,7 +121,7 @@ builder.Services.AddOutputCache(options =>
 });
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddFileEndpoints();
+builder.Services.AddRecipeImageFeature();
 
 var app = builder.Build();
 
@@ -102,13 +136,21 @@ app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
-app.UseFileRequestLimits();
+app.UseRecipeImageRequestLimits();
 app.UseOutputCache();
 
 app.MapAuthEndpoints();
-app.MapFileEndpoints();
+app.MapRecipeImageEndpoints();
 app.MapRecipeIngredientEndpoints();
 app.MapRecipeStepEndpoints();
+
+if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
+{
+    app.MapHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = []
+    }).RequireAuthorization("AdminPolicy");
+}
 
 app.MapGet("/api/v1/categories", async (
     IMediator mediator,
@@ -233,7 +275,7 @@ app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
     System.Security.Claims.ClaimsPrincipal user,
-    Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore,
+    RecipeImageCacheInvalidator cacheStore,
     CancellationToken cancellationToken) =>
 {
     var validationResults = new List<ValidationResult>();
@@ -269,7 +311,7 @@ app.MapPost("/api/v1/recipes", async (
             new CreateRecipeCommand(request, authorId),
             cancellationToken);
 
-        await cacheStore.EvictByTagAsync("recipes", cancellationToken);
+        await cacheStore.InvalidateAsync();
 
         return Results.Created($"/api/v1/recipes/{recipeId}", new
         {
@@ -277,12 +319,19 @@ app.MapPost("/api/v1/recipes", async (
             id = recipeId
         });
     }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (FluentValidation.ValidationException ex)
+    {
+        return Results.ValidationProblem(ex.Errors.GroupBy(x => x.PropertyName)
+            .ToDictionary(group => group.Key, group => group.Select(x => x.ErrorMessage).ToArray()), statusCode: 422);
+    }
     catch (InvalidOperationException ex)
     {
         return Results.BadRequest(new { message = ex.Message });
     }
 })
 .WithName("CreateRecipeV1")
+.RequireAuthorization()
 .WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
 
 using (var scope = app.Services.CreateScope())
@@ -290,6 +339,17 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
     await dbContext.Database.MigrateAsync();
+
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+    foreach (var roleName in new[] { "Author", "Admin" })
+    {
+        if (!await roleManager.RoleExistsAsync(roleName))
+        {
+            var result = await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
+            if (!result.Succeeded && !await roleManager.RoleExistsAsync(roleName))
+                throw new InvalidOperationException($"Could not initialize role {roleName}.");
+        }
+    }
 
     if (!await dbContext.Categories.AnyAsync())
     {
@@ -397,5 +457,10 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 }
+
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletionReconciliationJob>(
+    "reconcile-file-deletions", job => job.ExecuteAsync(CancellationToken.None), "*/5 * * * *");
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
+    "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
 
 app.Run();

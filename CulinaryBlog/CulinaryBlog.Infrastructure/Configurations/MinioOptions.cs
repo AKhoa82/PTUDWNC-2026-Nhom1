@@ -15,4 +15,12 @@ public class MinioOptions
     /// Nếu để trống, sẽ tự động sinh dựa trên Endpoint và UseSsl: http://{Endpoint} hoặc https://{Endpoint}.
     /// </summary>
     public string? PublicBaseUrl { get; set; }
+    public List<LegacyStorageLocation> LegacyLocations { get; set; } = [];
+}
+
+public sealed class LegacyStorageLocation
+{
+    // Full canonical URL prefix INCLUDING bucket, ending in '/'.
+    public string PublicPrefix { get; set; } = string.Empty;
+    public string BucketName { get; set; } = string.Empty;
 }

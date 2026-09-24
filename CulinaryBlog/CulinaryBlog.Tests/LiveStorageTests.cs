@@ -1,4 +1,4 @@
-using CulinaryBlog.Application.Features.Files;
+using CulinaryBlog.Application.Contracts.Infrastructure;
 using CulinaryBlog.Domain.Entities;
 using CulinaryBlog.Infrastructure.Configurations;
 using CulinaryBlog.Infrastructure.Persistence;
@@ -39,7 +39,6 @@ public sealed class LiveStorageTests
         using var client = new MinioClient().WithEndpoint(options.Endpoint)
             .WithCredentials(options.AccessKey, options.SecretKey).WithTimeout(10000).Build();
         using var storage = new MinioFileStorageService(client, Options.Create(options), NullLogger<MinioFileStorageService>.Instance);
-        var service = new FileManagementService(db, storage, NullLogger<FileManagementService>.Instance);
         string? url = null;
         try
         {
@@ -52,22 +51,25 @@ public sealed class LiveStorageTests
             using var stream = new MemoryStream(png);
             var file = new FormFile(stream, 0, png.Length, "file", "pixel.png")
             { Headers = new HeaderDictionary(), ContentType = "image/png" };
-            var uploaded = await service.UploadAsync(file, "recipes", owner.Id, default);
-            url = uploaded.Url;
+            var reference = storage.CreateReference("recipes", file.FileName);
+            await storage.UploadAsync(file, reference);
+            url = storage.GetPublicUrl(reference);
+            db.StoredFiles.Add(new StoredFile { OwnerId = owner.Id, Url = url, BucketName = reference.BucketName, ObjectKey = reference.ObjectKey });
+            await db.SaveChangesAsync();
             Assert.Equal(owner.Id, (await db.StoredFiles.SingleAsync()).OwnerId);
             using var http = new HttpClient();
             var publicResponse = await http.GetAsync(url);
             publicResponse.EnsureSuccessStatusCode();
             Assert.Equal("image/png", publicResponse.Content.Headers.ContentType?.MediaType);
             Assert.Equal(png, await publicResponse.Content.ReadAsByteArrayAsync());
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteAsync(url, other.Id, default));
             Assert.True(await storage.ExistsAsync(url));
-            await service.DeleteAsync(url, owner.Id, default);
-            await service.DeleteAsync(url, owner.Id, default);
+            // Changing the public domain does not change the stored object identity.
+            options.PublicBaseUrl = "https://changed.example.test";
+            await storage.DeleteAsync(reference);
+            await storage.DeleteAsync(reference);
             // Check storage-level idempotence independently of the database tombstone.
             await storage.DeleteAsync(url);
             Assert.False(await storage.ExistsAsync(url));
-            Assert.NotNull((await db.StoredFiles.SingleAsync()).DeletedAt);
         }
         finally
         {

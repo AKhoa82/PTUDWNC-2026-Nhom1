@@ -19,15 +19,38 @@ public sealed class MinioFileStorageService(
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private volatile bool _initialized;
 
-    public async Task<string> UploadAsync(IFormFile file, string folder = "uploads", CancellationToken cancellationToken = default)
+    public StorageObjectReference CreateReference(string folder, string fileName) => new(
+        _options.BucketName, $"{FileValidationHelper.ValidateFolder(folder)}/{Guid.NewGuid():N}{Path.GetExtension(fileName).ToLowerInvariant()}");
+
+    public string GetPublicUrl(StorageObjectReference reference)
     {
-        await FileValidationHelper.ValidateImageFileAsync(file, cancellationToken);
-        var safeFolder = FileValidationHelper.ValidateFolder(folder);
-        using var stream = file.OpenReadStream();
-        return await UploadValidatedAsync(stream, file.Length, file.FileName, file.ContentType, safeFolder, cancellationToken);
+        ValidateReference(reference);
+        var baseUrl = string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
+            ? $"{(_options.UseSsl ? "https" : "http")}://{_options.Endpoint}" : _options.PublicBaseUrl;
+        return baseUrl.TrimEnd('/') + "/" + reference.BucketName + "/" + string.Join('/', reference.ObjectKey.Split('/').Select(Uri.EscapeDataString));
     }
 
-    public async Task<string> UploadStreamAsync(Stream stream, string fileName, string contentType, string folder = "uploads", CancellationToken cancellationToken = default)
+    private static void ValidateReference(StorageObjectReference reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference.BucketName) || reference.BucketName.Length > 63 ||
+            reference.BucketName.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-' && c != '.'))
+            throw new ArgumentException("Invalid bucket name.");
+        if (string.IsNullOrWhiteSpace(reference.ObjectKey) || reference.ObjectKey.Length > 512 ||
+            reference.ObjectKey.Split('/').Any(s => string.IsNullOrEmpty(s) || s is "." or ".." ||
+                s.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-' && c != '_' && c != '.')))
+            throw new ArgumentException("Invalid object key.");
+    }
+
+    public async Task UploadAsync(IFormFile file, StorageObjectReference reference, CancellationToken cancellationToken = default)
+    {
+        await FileValidationHelper.ValidateImageFileAsync(file, cancellationToken);
+        ValidateReference(reference);
+        if (reference.BucketName != _options.BucketName) throw new ArgumentException("Uploads require the configured bucket.");
+        using var stream = file.OpenReadStream();
+        await UploadValidatedAsync(stream, file.Length, file.ContentType, reference, cancellationToken);
+    }
+
+    public async Task UploadStreamAsync(Stream stream, string fileName, string contentType, StorageObjectReference reference, CancellationToken cancellationToken = default)
     {
         // Bound buffering for non-seekable streams; apply the same validation as HTTP uploads.
         using var buffer = new MemoryStream();
@@ -44,26 +67,24 @@ public sealed class MinioFileStorageService(
         {
             Headers = new HeaderDictionary(), ContentType = contentType
         };
-        return await UploadAsync(file, folder, cancellationToken);
+        await UploadAsync(file, reference, cancellationToken);
     }
 
-    private async Task<string> UploadValidatedAsync(Stream stream, long length, string fileName, string contentType, string folder, CancellationToken ct)
+    private async Task UploadValidatedAsync(Stream stream, long length, string contentType, StorageObjectReference reference, CancellationToken ct)
     {
         await EnsureBucketAsync(ct);
-        var objectName = $"{folder}/{Guid.NewGuid():N}{Path.GetExtension(fileName).ToLowerInvariant()}";
-        await client.PutObjectAsync(new PutObjectArgs().WithBucket(_options.BucketName)
-            .WithObject(objectName).WithStreamData(stream).WithObjectSize(length).WithContentType(contentType), ct);
-        return BuildPublicUrl(objectName);
+        await client.PutObjectAsync(new PutObjectArgs().WithBucket(reference.BucketName)
+            .WithObject(reference.ObjectKey).WithStreamData(stream).WithObjectSize(length).WithContentType(contentType), ct);
     }
 
-    public async Task DeleteAsync(string fileUrl, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(StorageObjectReference reference, CancellationToken cancellationToken = default)
     {
-        var objectName = ExtractObjectName(fileUrl);
+        ValidateReference(reference);
         try
         {
             // Do not create buckets or change their policy on DELETE.
-            await client.RemoveObjectAsync(new RemoveObjectArgs().WithBucket(_options.BucketName)
-                .WithObject(objectName), cancellationToken);
+            await client.RemoveObjectAsync(new RemoveObjectArgs().WithBucket(reference.BucketName)
+                .WithObject(reference.ObjectKey), cancellationToken);
         }
         catch (MinioException ex) when (ex is ObjectNotFoundException or BucketNotFoundException)
         {
@@ -71,13 +92,13 @@ public sealed class MinioFileStorageService(
         }
     }
 
-    public async Task<bool> ExistsAsync(string fileUrl, CancellationToken cancellationToken = default)
+    public async Task<bool> ExistsAsync(StorageObjectReference reference, CancellationToken cancellationToken = default)
     {
-        var objectName = ExtractObjectName(fileUrl);
+        ValidateReference(reference);
         try
         {
-            await client.StatObjectAsync(new StatObjectArgs().WithBucket(_options.BucketName)
-                .WithObject(objectName), cancellationToken);
+            await client.StatObjectAsync(new StatObjectArgs().WithBucket(reference.BucketName)
+                .WithObject(reference.ObjectKey), cancellationToken);
             return true;
         }
         catch (MinioException ex) when (ex is ObjectNotFoundException or BucketNotFoundException)
@@ -115,30 +136,6 @@ public sealed class MinioFileStorageService(
             logger.LogInformation("MinIO public image bucket {Bucket} is ready", _options.BucketName);
         }
         finally { _initLock.Release(); }
-    }
-
-    private string PublicPrefix =>
-        (string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
-            ? $"{(_options.UseSsl ? "https" : "http")}://{_options.Endpoint}" : _options.PublicBaseUrl).TrimEnd('/')
-        + "/" + _options.BucketName + "/";
-
-    private string BuildPublicUrl(string objectName) =>
-        PublicPrefix + string.Join('/', objectName.Split('/').Select(Uri.EscapeDataString));
-
-    private string ExtractObjectName(string fileUrl)
-    {
-        // Only canonical URLs produced by this storage provider are accepted.
-        if (string.IsNullOrWhiteSpace(fileUrl) || !fileUrl.StartsWith(PublicPrefix, StringComparison.Ordinal) ||
-            !Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri) ||
-            !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
-            throw new ArgumentException("URL không thuộc kho lưu trữ được cấu hình.");
-        var key = Uri.UnescapeDataString(fileUrl[PublicPrefix.Length..]);
-        var segments = key.Split('/');
-        if (segments.Any(s => string.IsNullOrEmpty(s) || s is "." or ".." ||
-                s.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-' && c != '_' && c != '.')) ||
-            BuildPublicUrl(key) != fileUrl)
-            throw new ArgumentException("Object key không hợp lệ.");
-        return key;
     }
 
     public void Dispose() => _initLock.Dispose();

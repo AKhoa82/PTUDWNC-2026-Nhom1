@@ -3,6 +3,7 @@ using System;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CulinaryBlog.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923161609_AddRecipeImagesAndFileDeletionQueue")]
+    partial class AddRecipeImagesAndFileDeletionQueue
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -107,26 +110,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                     b.HasIndex("CategoryId");
 
                     b.ToTable("Recipes");
-                });
-
-            modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeCacheInvalidation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt")
-                        .HasFilter("\"ProcessedAt\" IS NULL");
-
-                    b.ToTable("RecipeCacheInvalidations");
                 });
 
             modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeImage", b =>
@@ -285,10 +268,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("BucketName")
-                        .HasMaxLength(63)
-                        .HasColumnType("character varying(63)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -302,21 +281,11 @@ namespace CulinaryBlog.Infrastructure.Migrations
                     b.Property<DateTime?>("DeletionRequestedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ObjectKey")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UploadExpiresAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Url")
                         .IsRequired()
@@ -330,15 +299,8 @@ namespace CulinaryBlog.Infrastructure.Migrations
 
                     b.HasIndex("OwnerId");
 
-                    b.HasIndex("UploadExpiresAt")
-                        .HasFilter("\"Status\" = 0");
-
                     b.HasIndex("Url")
                         .IsUnique();
-
-                    b.HasIndex("BucketName", "ObjectKey")
-                        .IsUnique()
-                        .HasFilter("\"BucketName\" IS NOT NULL AND \"ObjectKey\" IS NOT NULL");
 
                     b.ToTable("StoredFiles");
                 });

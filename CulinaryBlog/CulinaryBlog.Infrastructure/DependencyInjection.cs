@@ -5,6 +5,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Minio;
+using Hangfire;
+using Hangfire.PostgreSql;
+using CulinaryBlog.Infrastructure.Jobs;
+using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Infrastructure.Persistence;
 
 namespace CulinaryBlog.Infrastructure;
 
@@ -47,6 +52,21 @@ public static class DependencyInjection
 
         // 3. Đăng ký IFileStorageService
         services.AddSingleton<IFileStorageService, MinioFileStorageService>();
+        services.AddScoped<IFileDeletionQueue, HangfireFileDeletionQueue>();
+        services.AddScoped<IRecipeImageTransactionFactory, RecipeImageTransactionFactory>();
+        services.AddScoped<IFileLifecycleSessionFactory, FileLifecycleSessionFactory>();
+        services.AddScoped<StorageMaintenanceService>();
+        services.AddScoped<DeleteStoredFileJob>();
+        services.AddScoped<FileDeletionReconciliationJob>();
+
+        var databaseConnection = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("DefaultConnection is required for Hangfire.");
+        services.AddHangfire(config => config
+            .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+            .UseSimpleAssemblyNameTypeSerializer()
+            .UseRecommendedSerializerSettings()
+            .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(databaseConnection)));
+        services.AddHangfireServer();
 
         return services;
     }
