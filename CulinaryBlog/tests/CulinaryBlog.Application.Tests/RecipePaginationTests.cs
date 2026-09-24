@@ -136,6 +136,8 @@ public class RecipePaginationTests
 
     private sealed class TestContext : DbContext, IApplicationDbContext
     {
+        public Task<string?> GetRecipeListVersionAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>("test");
         public DbSet<Recipe> Recipes => Set<Recipe>();
         public DbSet<Category> Categories => Set<Category>();
         public DbSet<User> Users => throw new NotSupportedException();

@@ -33,8 +33,39 @@ npx tsc --noEmit
 npm run build
 ```
 
-Tests sử dụng EF Core InMemory và MemoryDistributedCache thay thế dịch vụ ngoài, bao phủ thứ tự trùng nhau trên mọi sort, trang đầu/cuối, giới hạn pageSize, offset tràn int, lọc trước đếm, phân biệt cache từng trang và quyền xem dữ liệu. Không thay thế kiểm thử SQL trên PostgreSQL/Redis thật.
+Unit tests sử dụng EF Core InMemory và MemoryDistributedCache, bao phủ thứ tự trùng nhau trên mọi sort, trang đầu/cuối, giới hạn pageSize, offset tràn int, lọc trước đếm, phân biệt cache từng trang và quyền xem dữ liệu. Bộ integration test bên dưới chạy PostgreSQL/Redis thật.
 
 Chạy API với PostgreSQL và Redis theo cấu hình dự án, chạy frontend bằng `npm run dev`, mở `/recipes`. Thử pageSize=1 để kiểm tra nhiều trang với dữ liệu mẫu; đổi từ khóa/bộ lọc rồi chuyển trang và Back; truy cập `?page=2147483647&pageSize=50` để kiểm tra kết quả rỗng. Có thể gọi API trực tiếp với page=0 hoặc pageSize=51 để kiểm tra 422.
 
-Offset pagination bảo đảm thứ tự khi dữ liệu không thay đổi; bản ghi được thêm/xóa giữa hai request vẫn có thể làm dịch chuyển trang. Không có migration/schema mới.
+Offset pagination bảo đảm thứ tự khi dữ liệu không thay đổi; bản ghi được thêm/xóa giữa hai request vẫn có thể làm dịch chuyển trang.
+
+## Hoàn thiện ngày 24/09/2026
+
+- Cache danh sách dùng generation lưu trong bảng `RecipeListVersions` của PostgreSQL. `ApplicationDbContext` đổi generation trong cùng SaveChanges/transaction với thêm/sửa/xóa Recipe hoặc Category. Hỗ trợ cả lưu đồng bộ, bất đồng bộ và transaction bên ngoài: rollback không đổi generation đã commit; commit công bố dữ liệu và generation cùng nhau.
+- Mỗi request công khai đọc generation từ database trước khi dùng Redis. Redis chỉ chứa các trang có TTL 15 phút; request đang chạy với generation cũ không thể ghi đè trang thuộc generation mới. Nếu Redis lỗi GET/SET, handler ghi log và trả dữ liệu database; việc lưu công thức không gọi Redis. Redis phục hồi không làm các trang cũ được dùng lại.
+- Nút “Trước” khi URL vượt số trang đưa về trang cuối hợp lệ, giữ nguyên bộ lọc và pageSize.
+- Bổ sung test hồi quy cho cache sau thay đổi trạng thái, đổi riêng tên danh mục, xóa công thức, request ghi cache trễ và Redis lỗi/khôi phục.
+- Bổ sung test PostgreSQL/Redis thật: tạo database `pagination_test_<guid>`, áp dụng toàn bộ migrations và dùng prefix Redis riêng; xác minh trang đầu/cuối, cache, offset cực lớn, invalidation, rollback và commit transaction bên ngoài. Database thử được xóa khi kết thúc; các page key thử tự hết hạn.
+
+Migration mới `AddRecipeListVersion` phải được áp dụng trước khi chạy API mới:
+
+```powershell
+dotnet ef database update --project CulinaryBlog/CulinaryBlog.Infrastructure --startup-project CulinaryBlog/CulinaryBlog.API
+```
+
+Design-time factory mặc định trỏ tới database development `culinary_blog`; dùng `--connection` khi triển khai sang database khác. Các instance ghi dữ liệu cần được nâng cấp đồng bộ để đều cập nhật generation.
+
+Tình trạng local đã kiểm tra: Docker hiện có database `CulinaryBlog`, không có `culinary_blog`; connection trong appsettings.json không xác thực được với container hiện tại. Database `CulinaryBlog` còn các migration cũ từ `AddIdentityAndRefreshTokens` trở đi chưa áp dụng. Lần sửa này chỉ chạy migration trên database thử riêng, chưa áp dụng vào database ứng dụng; cần thống nhất connection và rà soát các migration cũ trước khi cập nhật database đó.
+
+Chạy kiểm thử tích hợp (PostgreSQL và Redis phải đang chạy):
+
+```powershell
+$env:RUN_PAGINATION_INTEGRATION='1'
+dotnet test CulinaryBlog/tests/CulinaryBlog.Application.Tests/CulinaryBlog.Application.Tests.csproj --disable-build-servers -m:1 -p:UseSharedCompilation=false
+```
+
+Có thể cấu hình `PAGINATION_TEST_POSTGRES` và `PAGINATION_TEST_REDIS`; mặc định dùng dịch vụ localhost trong docker-compose. Khi không bật biến tích hợp, test này được skip.
+
+Đã xác minh: 25 test đạt, bao gồm integration test PostgreSQL/Redis thật và áp dụng migrations từ database trống; build solution đạt, không warning/error. Build production Next.js đã đạt ở lần sửa giao diện trước, lần sửa này không thay đổi frontend. Chưa chạy tự động hóa trình duyệt end-to-end.
+
+Giới hạn: invalidation áp dụng cho thay đổi được lưu qua ApplicationDbContext. SQL trực tiếp/ExecuteUpdate/ExecuteDelete cần tự cập nhật `RecipeListVersions` trong cùng transaction. Mỗi request công khai cần thêm một truy vấn nhỏ để đọc generation; khi Redis không phản hồi phải chờ timeout của Redis client rồi mới fallback. Offset pagination vẫn có thể dịch trang khi dữ liệu thay đổi giữa các request theo đúng đặc tính thiết kế trong SRS.

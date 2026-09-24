@@ -123,7 +123,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
           </article>)}
         </div>}
         {result.totalPages > 0 && <nav aria-label="Phân trang kết quả" className="flex flex-wrap items-center justify-center gap-2">
-          {result.hasPreviousPage ? <><Link href={pageHref(1)} className={linkClass}>Đầu</Link><Link href={pageHref(result.page - 1)} rel="prev" className={linkClass}>Trước</Link></> : <span aria-disabled="true" className="px-4 py-2 opacity-50">Trước</span>}
+          {result.hasPreviousPage ? <><Link href={pageHref(1)} className={linkClass}>Đầu</Link><Link href={pageHref(Math.min(result.page - 1, result.totalPages))} rel="prev" className={linkClass}>Trước</Link></> : <span aria-disabled="true" className="px-4 py-2 opacity-50">Trước</span>}
           {Array.from({ length: Math.min(5, result.totalPages) }, (_, index) => Math.max(1, Math.min(result.page - 2, result.totalPages - 4)) + index).map(number =>
             <Link key={number} href={pageHref(number)} aria-label={`Trang ${number}`} aria-current={number === result.page ? "page" : undefined} className={`${linkClass} ${number === result.page ? "bg-[#022c24] text-white hover:bg-[#064e3b]" : ""}`}>{number}</Link>
           )}
