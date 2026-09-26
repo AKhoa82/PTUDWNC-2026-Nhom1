@@ -62,6 +62,7 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddDataProtection();
+builder.Services.AddHttpClient();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {

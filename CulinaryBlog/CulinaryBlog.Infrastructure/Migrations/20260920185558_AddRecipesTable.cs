@@ -11,13 +11,8 @@ namespace CulinaryBlog.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_Users_Email",
-                table: "Users");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Users_Username",
-                table: "Users");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Users_Email\";");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Users_Username\";");
 
             migrationBuilder.CreateTable(
                 name: "Recipes",
@@ -56,17 +51,8 @@ namespace CulinaryBlog.Infrastructure.Migrations
             migrationBuilder.DropTable(
                 name: "Recipes");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Users_Email",
-                table: "Users",
-                column: "Email",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Users_Username",
-                table: "Users",
-                column: "Username",
-                unique: true);
+            migrationBuilder.Sql("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Users_Email\" ON \"Users\" (\"Email\");");
+            migrationBuilder.Sql("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Users_Username\" ON \"Users\" (\"Username\");");
         }
     }
 }

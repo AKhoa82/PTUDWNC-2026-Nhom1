@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, Mail } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
@@ -16,6 +16,34 @@ const loginSchema = z.object({
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential?: string }) => void;
+          }) => void;
+          renderButton: (
+            element: HTMLElement,
+            options: {
+              theme?: string;
+              size?: string;
+              width?: string | number;
+              text?: string;
+              shape?: string;
+              logo_alignment?: string;
+            }
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
+const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,6 +52,104 @@ export default function LoginPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
+
+  useEffect(() => {
+    if (!googleClientId || typeof window === "undefined") {
+      return;
+    }
+
+    const initializeGoogle = () => {
+      if (!window.google?.accounts?.id) {
+        return;
+      }
+
+      const buttonTarget = document.getElementById("google-signin-button");
+      if (!buttonTarget) {
+        return;
+      }
+
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async (response) => {
+          if (!response.credential) {
+            setServerError("Google login bị hủy hoặc không hợp lệ.");
+            return;
+          }
+
+          setIsSubmitting(true);
+          setServerError("");
+          setSuccessMessage("");
+
+          try {
+            const responseFromApi = await fetch(`${apiUrl}/v1/auth/google`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ idToken: response.credential }),
+            });
+
+            const responseText = await responseFromApi.text();
+            let data: {
+              message?: string;
+              user?: { accessToken?: string; refreshToken?: string; accessTokenExpiresAt?: string };
+            } = {};
+
+            if (responseText.trim()) {
+              try {
+                data = JSON.parse(responseText) as { message?: string };
+              } catch {
+                data = {};
+              }
+            }
+
+            if (!responseFromApi.ok) {
+              throw new Error(
+                responseFromApi.status === 401
+                  ? "Google login không hợp lệ hoặc đã hết hạn."
+                  : data.message ?? "Google login thất bại."
+              );
+            }
+
+            if (data.user?.accessToken && data.user.refreshToken) {
+              localStorage.setItem("accessToken", data.user.accessToken);
+              localStorage.setItem("refreshToken", data.user.refreshToken);
+              if (data.user.accessTokenExpiresAt) {
+                localStorage.setItem("accessTokenExpiresAt", data.user.accessTokenExpiresAt);
+              }
+            }
+
+            setSuccessMessage(data.message ?? "Đăng nhập Google thành công.");
+          } catch (error) {
+            setServerError(error instanceof Error ? error.message : "Không thể xác thực qua Google.");
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
+      });
+
+      window.google.accounts.id.renderButton(buttonTarget, {
+        theme: "outline",
+        size: "large",
+        width: 320,
+        text: "continue_with",
+        shape: "pill",
+        logo_alignment: "left",
+      });
+    };
+
+    const existingScript = document.getElementById("google-gsi-script");
+    if (existingScript) {
+      initializeGoogle();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = "google-gsi-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = initializeGoogle;
+    document.head.appendChild(script);
+  }, [googleClientId]);
 
   const onSubmit = async (values: LoginFormData) => {
     setIsSubmitting(true);
@@ -101,6 +227,22 @@ export default function LoginPage() {
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Mật khẩu *</span><span className="relative block"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type={showPassword ? "text" : "password"} placeholder="••••••••" className={`${fieldClass(Boolean(errors.password))} pl-10 pr-11`} {...register("password")} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8d958f]" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>{errors.password && <span className="mt-1 block text-xs text-[#b9674a]">{errors.password.message}</span>}</label>
             <button type="submit" disabled={isSubmitting} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-lg bg-[#c6a15b] text-sm font-semibold uppercase tracking-wider text-[#022c24] transition hover:bg-[#063c2f] hover:text-[#fbf8f1] disabled:opacity-50">{isSubmitting ? "Đang đăng nhập..." : <>Đăng nhập <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
+
+          <div className="my-6">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="h-px flex-1 bg-[#e5dece]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8d958f]">Hoặc</span>
+              <div className="h-px flex-1 bg-[#e5dece]" />
+            </div>
+            {googleClientId ? (
+              <div id="google-signin-button" className="min-h-[46px] rounded-lg border border-[#e5dece] bg-white" />
+            ) : (
+              <div className="rounded-lg border border-dashed border-[#c6a15b]/60 bg-[#f5f0e6] px-3 py-2 text-center text-xs text-[#8d958f]">
+                Thiếu NEXT_PUBLIC_GOOGLE_CLIENT_ID để dùng Google OAuth.
+              </div>
+            )}
+          </div>
+
           <p className="mt-7 border-t border-[#e5dece] pt-5 text-center text-sm text-[#8d958f]">Chưa có tài khoản? <Link href="/" className="font-bold text-[#063c2f] underline underline-offset-4">Đăng ký ngay →</Link></p>
         </div>
       </section>
