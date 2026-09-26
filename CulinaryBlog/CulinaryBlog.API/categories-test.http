@@ -1,0 +1,32 @@
+﻿@host = https://localhost:7123
+
+### 1. Test Tạo Danh Mục Mới (Tự động sinh Slug từ Name)
+POST {{host}}/api/v1/categories
+Content-Type: application/json
+
+{
+  "name": "Món Ăn Vặt",
+  "slug": "",
+  "description": "Các món ăn vặt ngon tuyệt"
+}
+
+### 2. Test Tạo Danh Mục (Trường hợp trùng Slug -> Trả lỗi 400)
+POST {{host}}/api/v1/categories
+Content-Type: application/json
+
+{
+  "name": "Món Việt",
+  "slug": "mon-viet",
+  "description": "Thử tạo trùng slug đã có trong database"
+}
+
+### 3. Test Cập Nhật Danh Mục
+# Thay GUID bên dưới bằng ID thực tế trong database của bạn
+PUT {{host}}/api/v1/categories/11111111-0000-0000-0000-000000000001
+Content-Type: application/json
+
+{
+  "name": "Món Việt Nam Truyền Thống",
+  "slug": "mon-viet-nam-truyen-thong",
+  "description": "Cập nhật mô tả mới"
+}
