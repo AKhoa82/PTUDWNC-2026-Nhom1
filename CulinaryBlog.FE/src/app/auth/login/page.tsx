@@ -8,6 +8,9 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
+// IMPORTANT: keep this in sync with backend route MapPost("/api/v1/auth/google")
+const googleAuthEndpoint = `${apiUrl}/v1/auth/google`;
+const emailLoginEndpoint = `${apiUrl}/auth/login`;
 
 const loginSchema = z.object({
   email: z.string().trim().email("Email không hợp lệ."),
@@ -81,7 +84,7 @@ export default function LoginPage() {
           setSuccessMessage("");
 
           try {
-            const responseFromApi = await fetch(`${apiUrl}/v1/auth/google`, {
+            const responseFromApi = await fetch(googleAuthEndpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ idToken: response.credential }),
@@ -102,6 +105,9 @@ export default function LoginPage() {
             }
 
             if (!responseFromApi.ok) {
+              if (data.message) {
+                throw new Error(data.message);
+              }
               throw new Error(
                 responseFromApi.status === 401
                   ? "Google login không hợp lệ hoặc đã hết hạn."
@@ -129,11 +135,19 @@ export default function LoginPage() {
       window.google.accounts.id.renderButton(buttonTarget, {
         theme: "outline",
         size: "large",
-        width: 320,
+        width: 400,
         text: "continue_with",
         shape: "pill",
         logo_alignment: "left",
       });
+
+      // Google caps its rendered button at 400px. Stretch the iframe to the
+      // full login column width so it lines up with the divider above.
+      const googleButtonFrame = buttonTarget.querySelector("iframe");
+      if (googleButtonFrame) {
+        googleButtonFrame.style.transform = "scaleX(1.25)";
+        googleButtonFrame.style.transformOrigin = "left center";
+      }
     };
 
     const existingScript = document.getElementById("google-gsi-script");
@@ -157,7 +171,7 @@ export default function LoginPage() {
     setSuccessMessage("");
 
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
+      const response = await fetch(emailLoginEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),

@@ -20,6 +20,7 @@ public static class AuthEndpoints
     {
         endpoints.MapPost("/api/auth/register", Register);
         endpoints.MapPost("/api/auth/login", Login);
+        // Frontend uses: {apiUrl}/v1/auth/google
         endpoints.MapPost("/api/v1/auth/google", GoogleLogin);
 
         return endpoints;
