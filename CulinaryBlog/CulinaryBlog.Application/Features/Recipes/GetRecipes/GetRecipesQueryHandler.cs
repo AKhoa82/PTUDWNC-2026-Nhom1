@@ -6,6 +6,9 @@ using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using FluentValidation;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CulinaryBlog.Application.Features.Recipes.GetRecipes;
 
@@ -13,32 +16,44 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 {
     private readonly IApplicationDbContext _context;
     private readonly IDistributedCache _cache;
+    private readonly ILogger<GetRecipesQueryHandler> _logger;
 
     public const string CacheKeyPrefix = "recipes:list:";
     public const string CacheVersionKey = "recipes:list:version";
 
-    public GetRecipesQueryHandler(IApplicationDbContext context, IDistributedCache cache)
+    public GetRecipesQueryHandler(IApplicationDbContext context, IDistributedCache cache,
+        ILogger<GetRecipesQueryHandler>? logger = null)
     {
         _context = context;
         _cache = cache;
+        _logger = logger ?? NullLogger<GetRecipesQueryHandler>.Instance;
     }
 
     public async Task<PagedResult<RecipeSummaryDto>> Handle(
         GetRecipesQuery request,
         CancellationToken cancellationToken)
     {
+        await new GetRecipesQueryValidator().ValidateAndThrowAsync(request, cancellationToken);
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
-        var cacheKey = BuildCacheKey(request);
+        var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
+        shouldCache &= version is not null;
+        var cacheKey = $"{BuildCacheKey(request)}:v{version}";
         
         if (shouldCache)
         {
-            var version = await _cache.GetStringAsync(CacheVersionKey, cancellationToken) ?? "0";
-            cacheKey += $":v{version}";
-            var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
-            if (!string.IsNullOrEmpty(cachedJson))
+            try
             {
-                var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
-                if (cached is not null) return cached;
+                var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
+                if (!string.IsNullOrEmpty(cachedJson))
+                {
+                    var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
+                    if (cached is not null) return cached;
+                }
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(exception, "Recipe list cache read failed; querying the database.");
+                shouldCache = false;
             }
         }
 
@@ -80,7 +95,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
         var totalCount = await query.CountAsync(cancellationToken);
 
-        query = request.Sort switch
+        var orderedQuery = request.Sort switch
         {
             "createdAt"    => query.OrderBy(r => r.CreatedAt),
             "-createdAt"   => query.OrderByDescending(r => r.CreatedAt),
@@ -93,9 +108,12 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             _              => query.OrderByDescending(r => r.CreatedAt)
         };
 
-        var skip = (request.Page - 1) * request.PageSize;
+        // A unique tie-breaker keeps equal sort values on consistent pages.
+        // CountAsync returns an int, so offsets above int.MaxValue are always empty.
+        var skip = (int)Math.Min((long)(request.Page - 1) * request.PageSize, int.MaxValue);
 
-        var items = await query
+        var items = await orderedQuery
+            .ThenBy(r => r.Id)
             .Skip(skip)
             .Take(request.PageSize)
             .Select(r => new RecipeSummaryDto
@@ -127,11 +145,18 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             {
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
             };
-            await _cache.SetStringAsync(
-                cacheKey,
-                JsonSerializer.Serialize(result),
-                cacheOptions,
-                cancellationToken);
+            try
+            {
+                await _cache.SetStringAsync(
+                    cacheKey,
+                    JsonSerializer.Serialize(result),
+                    cacheOptions,
+                    cancellationToken);
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(exception, "Recipe list cache write failed; returning database results.");
+            }
         }
 
         return result;
