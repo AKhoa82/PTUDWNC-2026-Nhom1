@@ -73,6 +73,7 @@ public static class AuthEndpoints
         IApplicationDbContext context,
         IJwtService jwtService,
         HttpClient httpClient,
+        IConfiguration configuration,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.IdToken))
@@ -87,12 +88,24 @@ public static class AuthEndpoints
 
             if (!verificationResponse.IsSuccessStatusCode)
             {
-                return Results.Unauthorized();
+                return Results.Json(
+                    new { message = "Google từ chối ID token. Kiểm tra Client ID của frontend và cấu hình Google Cloud." },
+                    statusCode: StatusCodes.Status401Unauthorized);
             }
 
             var payload = await verificationResponse.Content.ReadAsStringAsync(cancellationToken);
             using var json = JsonDocument.Parse(payload);
             var root = json.RootElement;
+
+            var configuredClientId = configuration["Google:ClientId"];
+            if (string.IsNullOrWhiteSpace(configuredClientId) ||
+                !root.TryGetProperty("aud", out var audienceElement) ||
+                !string.Equals(audienceElement.GetString(), configuredClientId, StringComparison.Ordinal))
+            {
+                return Results.Json(
+                    new { message = "Client ID trong token Google không khớp với Google:ClientId của API." },
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
 
             if (!root.TryGetProperty("email", out var emailElement) ||
                 string.IsNullOrWhiteSpace(emailElement.GetString()))
@@ -101,9 +114,13 @@ public static class AuthEndpoints
             }
 
             if (!root.TryGetProperty("email_verified", out var emailVerifiedElement) ||
-                emailVerifiedElement.ValueKind != JsonValueKind.True)
+                !(emailVerifiedElement.ValueKind == JsonValueKind.True ||
+                  (emailVerifiedElement.ValueKind == JsonValueKind.String &&
+                   string.Equals(emailVerifiedElement.GetString(), "true", StringComparison.OrdinalIgnoreCase))))
             {
-                return Results.Unauthorized();
+                return Results.Json(
+                    new { message = "Google chưa xác minh email của tài khoản này." },
+                    statusCode: StatusCodes.Status401Unauthorized);
             }
 
             var email = emailElement.GetString()!;
