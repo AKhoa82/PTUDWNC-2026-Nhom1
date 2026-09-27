@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
@@ -6,7 +7,6 @@ using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
-using FluentValidation;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -32,7 +32,9 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         GetRecipesQuery request,
         CancellationToken cancellationToken)
     {
-        await new GetRecipesQueryValidator().ValidateAndThrowAsync(request, cancellationToken);
+        // Validation is owned by the MediatR ValidationBehavior.
+        // Normalize once so ordering and cache identity have identical semantics.
+        request = request with { Sort = NormalizeSort(request.Sort) };
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
         var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
         shouldCache &= version is not null;
@@ -91,6 +93,9 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
         if (request.MaxCookTime.HasValue)
             query = query.Where(r => r.CookingTimeMinutes <= request.MaxCookTime.Value);
+
+        if (request.MinServings.HasValue)
+            query = query.Where(r => r.Servings >= request.MinServings.Value);
 
         var totalCount = await query.CountAsync(cancellationToken);
 
@@ -163,18 +168,21 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
     private static string BuildCacheKey(GetRecipesQuery q)
     {
-        var userId = q.IsAdmin ? "admin"
-            : !string.IsNullOrEmpty(q.CurrentUserId) ? $"u:{q.CurrentUserId}"
-            : "anon";
-
-        return $"{CacheKeyPrefix}p{q.Page}_ps{q.PageSize}" +
-               $"_kw{q.Keyword}" +
-               $"_cid{q.CategoryId}" +
-               $"_{q.Difficulty}" +
-               $"_max{q.MaxCookTime}" +
-               $"_{q.Sort}" +
-               $"_{userId}";
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            q.Page, q.PageSize, q.Keyword, q.CategoryId, q.Difficulty,
+            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin
+        });
+        // Version the format so legacy concatenated keys are never reused.
+        return $"{CacheKeyPrefix}v2:{Convert.ToHexString(SHA256.HashData(payload))}";
     }
+
+    private static string NormalizeSort(string? sort) => sort switch
+    {
+        "createdAt" or "-createdAt" or "title" or "-title" or
+        "cookTime" or "-cookTime" or "publishedAt" or "-publishedAt" => sort,
+        _ => "-createdAt"
+    };
 
     public static string GetCacheKeyPrefix() => CacheKeyPrefix;
 }

@@ -109,7 +109,7 @@ public class RecipePaginationTests
     public async Task InvalidPaginationIsRejected(int page, int size)
     {
         using var db = CreateDatabase();
-        await Assert.ThrowsAsync<ValidationException>(() => CreateHandler(db).Handle(new GetRecipesQuery(Page: page, PageSize: size), default));
+        await Assert.ThrowsAsync<ValidationException>(() => new GetRecipesQueryValidator().ValidateAndThrowAsync(new GetRecipesQuery(Page: page, PageSize: size)));
     }
 
     private static GetRecipesQueryHandler CreateHandler(TestContext db) => new(db,
