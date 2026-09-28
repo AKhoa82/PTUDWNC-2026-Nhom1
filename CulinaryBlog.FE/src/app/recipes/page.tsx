@@ -43,7 +43,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
   const validPage = Number.isInteger(page) && page >= 1 && page <= 2147483647;
   const validSize = Number.isInteger(pageSize) && pageSize >= 1 && pageSize <= 50;
   const query = new URLSearchParams();
-  for (const key of ["keyword", "categoryId", "difficulty", "maxCookTime", "sort"]) {
+  for (const key of ["keyword", "categoryId", "difficulty", "maxCookTime", "minServings", "sort"]) {
     const input = value(key).trim();
     if (input) query.set(key, input);
   }
@@ -93,6 +93,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
           </select>
         </label>
         <label className="space-y-1">Thời gian nấu tối đa (phút)<input name="maxCookTime" type="number" min="0" max="2147483647" defaultValue={value("maxCookTime")} className={fieldClass} /></label>
+        <label className="space-y-1">Số khẩu phần tối thiểu<input name="minServings" type="number" min="1" max="2147483647" step="1" defaultValue={value("minServings")} className={fieldClass} /></label>
         <label className="space-y-1">Sắp xếp
           <select name="sort" defaultValue={value("sort", "-createdAt")} className={fieldClass}>
             <option value="-createdAt">Mới nhất</option><option value="createdAt">Cũ nhất</option><option value="title">Tên A–Z</option><option value="-title">Tên Z–A</option><option value="cookTime">Nấu nhanh nhất</option><option value="-cookTime">Nấu lâu nhất</option><option value="-publishedAt">Xuất bản mới nhất</option><option value="publishedAt">Xuất bản cũ nhất</option>

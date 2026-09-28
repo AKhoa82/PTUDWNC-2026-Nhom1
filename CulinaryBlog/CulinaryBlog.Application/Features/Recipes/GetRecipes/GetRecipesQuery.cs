@@ -14,5 +14,6 @@ public record GetRecipesQuery(
     int? MaxCookTime = null,
     string Sort = "-createdAt",
     string? CurrentUserId = null,
-    bool IsAdmin = false
+    bool IsAdmin = false,
+    int? MinServings = null
 ) : IRequest<PagedResult<RecipeSummaryDto>>;

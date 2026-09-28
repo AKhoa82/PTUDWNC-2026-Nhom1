@@ -52,7 +52,7 @@ public class RecipeListCacheTests
     [Fact]
     public async Task LateOldGenerationWriteCannotResurrectOldPages()
     {
-        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var cache = new FailingCache();
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         await db.Database.EnsureCreatedAsync();
@@ -64,7 +64,7 @@ public class RecipeListCacheTests
         var query = new GetRecipesQuery();
         await handler.Handle(query, default);
         var oldVersion = await db.GetRecipeListVersionAsync();
-        var oldKey = $"recipes:list:p1_ps12_kw_cid__max_-createdAt_anon:v{oldVersion}";
+        var oldKey = Assert.Single(cache.WrittenKeys);
         var oldPage = await cache.GetStringAsync(oldKey);
         Assert.NotNull(oldPage);
 
@@ -105,10 +105,35 @@ public class RecipeListCacheTests
         Assert.Equal(0, (await handler.Handle(query, default)).TotalCount);
     }
 
+    [Fact]
+    public async Task DelimiterKeywordsCannotReuseAnotherQueryAndUnknownSortUsesDefaultCache()
+    {
+        var cache = new FailingCache();
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        await db.Database.EnsureCreatedAsync();
+        db.Recipes.Add(new Recipe { Title = "Soup", Slug = "soup", Status = RecipeStatus.Published,
+            Category = new Category { Name = "Soup", Slug = "soup" } });
+        await db.SaveChangesAsync();
+        var handler = new GetRecipesQueryHandler(db, cache);
+        var first = new GetRecipesQuery(Sort: "foo_cid__max_min_-createdAt");
+        var second = new GetRecipesQuery(Keyword: "_cid__max_min_foo");
+        Assert.Single((await handler.Handle(first, default)).Items);
+        Assert.Empty((await handler.Handle(second, default)).Items);
+        Assert.Single((await handler.Handle(first, default)).Items);
+        Assert.Empty((await handler.Handle(second, default)).Items);
+        Assert.Equal(2, cache.WrittenKeys.Count);
+        Assert.Single((await handler.Handle(new GetRecipesQuery(), default)).Items);
+        Assert.Single((await handler.Handle(new GetRecipesQuery(Sort: "another-invalid-sort"), default)).Items);
+        Assert.Equal(2, cache.WrittenKeys.Count);
+        Assert.All(cache.WrittenKeys, key => Assert.StartsWith("recipes:list:v2:", key));
+    }
+
     private sealed class FailingCache : IDistributedCache
     {
         private readonly IDistributedCache _inner = new MemoryDistributedCache(
             Options.Create(new MemoryDistributedCacheOptions()));
+        public HashSet<string> WrittenKeys { get; } = [];
         public bool FailReads { get; set; }
         public bool FailWrites { get; set; }
         public byte[]? Get(string key) => FailReads ? throw new IOException("Redis unavailable") : _inner.Get(key);
@@ -117,6 +142,7 @@ public class RecipeListCacheTests
         public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
         {
             if (FailWrites) throw new IOException("Redis unavailable");
+            WrittenKeys.Add(key);
             _inner.Set(key, value, options);
         }
         public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default)

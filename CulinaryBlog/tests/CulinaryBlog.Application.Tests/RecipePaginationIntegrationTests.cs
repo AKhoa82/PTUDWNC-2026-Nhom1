@@ -61,6 +61,18 @@ public class RecipePaginationIntegrationTests
             Assert.Equal(first.Items.Select(item => item.Id),
                 (await handler.Handle(query, default)).Items.Select(item => item.Id));
 
+            var filtered = query with { CategoryId = category.Id, Difficulty = RecipeDifficulty.Easy,
+                MaxCookTime = 0, MinServings = 4 };
+            Assert.Empty((await handler.Handle(filtered, default)).Items);
+            recipes[0].Servings = 4;
+            await db.SaveChangesAsync();
+            Assert.Equal(recipes[0].Id, Assert.Single((await handler.Handle(filtered, default)).Items).Id);
+            Assert.Equal(recipes[0].Id, Assert.Single((await handler.Handle(filtered, default)).Items).Id);
+            Assert.Equal(13, (await handler.Handle(query, default)).TotalCount);
+            recipes[0].CookingTimeMinutes = 1;
+            await db.SaveChangesAsync();
+            Assert.Empty((await handler.Handle(filtered, default)).Items);
+
             recipes[0].Status = RecipeStatus.Archived;
             await db.SaveChangesAsync();
             Assert.Equal(12, (await handler.Handle(query, default)).TotalCount);

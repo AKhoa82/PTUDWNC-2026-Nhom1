@@ -51,6 +51,10 @@ var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
     throw new InvalidOperationException("Configure Jwt:Key (at least 32 UTF-8 bytes) using User Secrets or Jwt__Key.");
 
+// Console logging remains available when the Windows Event Log is not writable.
+if (OperatingSystem.IsWindows())
+    builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>((_, _) => false);
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -219,25 +223,20 @@ app.MapGet("/api/v1/recipes", async (
     Guid? categoryId = null,
     string? difficulty = null,
     int? maxCookTime = null,
+    int? minServings = null,
     string sort = "-createdAt") =>
 {
-    if (page < 1 || pageSize < 1 || pageSize > 50)
-    {
-        return Results.Problem(
-            detail: "page phải >= 1, pageSize phải trong khoảng [1, 50].",
-            statusCode: 422,
-            title: "Tham số không hợp lệ.");
-    }
-
     RecipeDifficulty? parsedDifficulty = null;
     if (!string.IsNullOrEmpty(difficulty))
     {
-        if (!Enum.TryParse<RecipeDifficulty>(difficulty, ignoreCase: true, out var diffEnum))
+        if (difficulty.Contains(',') || !Enum.TryParse<RecipeDifficulty>(difficulty, ignoreCase: true, out var diffEnum) || !Enum.IsDefined(diffEnum))
         {
-            return Results.Problem(
-                detail: "difficulty phải là một trong: Easy, Medium, Hard, Expert.",
-                statusCode: 422,
-                title: "Tham số không hợp lệ.");
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(GetRecipesQuery.Difficulty)] = ["difficulty phải là một trong: Easy, Medium, Hard, Expert."]
+                },
+                statusCode: 422);
         }
         parsedDifficulty = diffEnum;
     }
@@ -258,13 +257,23 @@ app.MapGet("/api/v1/recipes", async (
         CategoryId: categoryId,
         Difficulty: parsedDifficulty,
         MaxCookTime: maxCookTime,
+        MinServings: minServings,
         Sort: sort,
         CurrentUserId: currentUserId,
         IsAdmin: isAdmin
     );
 
-    var result = await mediator.Send(query, cancellationToken);
-    return Results.Ok(result);
+    try
+    {
+        var result = await mediator.Send(query, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (FluentValidation.ValidationException exception)
+    {
+        var errors = exception.Errors.GroupBy(error => error.PropertyName)
+            .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray());
+        return Results.ValidationProblem(errors, statusCode: 422);
+    }
 })
 .WithName("GetRecipesV1")
 .WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
