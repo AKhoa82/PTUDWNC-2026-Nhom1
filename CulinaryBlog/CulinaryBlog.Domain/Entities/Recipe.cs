@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace CulinaryBlog.Domain.Entities;
 
 public enum RecipeStatus
@@ -39,7 +41,44 @@ public class Recipe
     public DateTime? UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 
+    public RecipeNutrition? Nutrition { get; set; }
+
+    [Timestamp]
+    public byte[]? RowVersion { get; set; }
+
     public ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
     public ICollection<RecipeImage> Images { get; set; } = new List<RecipeImage>();
+
+    public void Update(
+        string title, 
+        string? description, 
+        Guid categoryId, 
+        int prepTimeMinutes, 
+        int cookingTimeMinutes, 
+        int servings, 
+        RecipeDifficulty difficulty, 
+        string instructions)
+    {
+        Title = title.Trim();
+        Description = description?.Trim();
+        CategoryId = categoryId;
+        PrepTimeMinutes = prepTimeMinutes;
+        CookingTimeMinutes = cookingTimeMinutes;
+        Servings = servings;
+        Difficulty = difficulty;
+        Instructions = instructions;
+        UpdatedAt = DateTime.UtcNow;
+        // Slug không cập nhật để giữ nguyên URL (tốt cho SEO)
+    }
+
+    public void SetNutrition(decimal calories, decimal protein, decimal carbs, decimal fat, decimal? fiber = null, decimal? sodium = null)
+    {
+        Nutrition = new RecipeNutrition(calories, protein, carbs, fat, fiber, sodium);
+    }
+
+    public void ClearNutrition()
+    {
+        Nutrition = null;
+    }
 }

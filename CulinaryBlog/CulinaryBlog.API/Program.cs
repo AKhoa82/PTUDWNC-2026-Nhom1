@@ -374,6 +374,43 @@ app.MapPost("/api/v1/recipes", async (
 .RequireAuthorization()
 .WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
 
+app.MapPut("/api/v1/recipes/{id:guid}", async (
+    Guid id,
+    CreateRecipeRequest body, 
+    CulinaryBlog.Application.DTOs.UpdateRecipeRequest request,
+    IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
+    RecipeImageCacheInvalidator cacheStore,
+    CancellationToken cancellationToken) =>
+{
+    string? currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrEmpty(currentUserId)) return Results.Forbid();
+    
+    bool isAdmin = user.IsInRole("Admin");
+
+    try
+    {
+        var result = await mediator.Send(
+            new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin), 
+            cancellationToken);
+
+        await cacheStore.InvalidateAsync();
+
+        return Results.Ok(result);
+    }
+    catch (UnauthorizedAccessException) { return Results.Forbid(); }
+    catch (CulinaryBlog.Application.Common.Exceptions.NotFoundException ex) { return Results.NotFound(new { message = ex.Message }); }
+    catch (CulinaryBlog.Application.Common.Exceptions.ConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
+    catch (FluentValidation.ValidationException ex)
+    {
+        return Results.ValidationProblem(ex.Errors.GroupBy(x => x.PropertyName)
+            .ToDictionary(group => group.Key, group => group.Select(x => x.ErrorMessage).ToArray()), statusCode: 422);
+    }
+})
+.WithName("UpdateRecipeV1")
+.RequireAuthorization()
+.WithSummary("FR-RCP-004 – Cập nhật công thức nấu ăn");
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
