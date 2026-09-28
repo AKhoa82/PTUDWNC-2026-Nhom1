@@ -77,6 +77,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<Recipe>().OwnsOne(r => r.Nutrition);
         modelBuilder.Entity<RecipeCacheInvalidation>().HasIndex(x => x.CreatedAt).HasFilter("\"ProcessedAt\" IS NULL");
 
         modelBuilder.Entity<RecipeListVersion>(version =>
