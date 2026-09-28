@@ -151,6 +151,7 @@ public class RecipePaginationTests
         protected override void OnModelCreating(ModelBuilder model)
         {
             model.Entity<Recipe>().Ignore(recipe => recipe.Steps).Ignore(recipe => recipe.Ingredients);
+            model.Entity<Recipe>().OwnsOne(r => r.Nutrition);
         }
     }
 }
