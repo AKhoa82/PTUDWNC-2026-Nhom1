@@ -3,6 +3,7 @@ using System;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CulinaryBlog.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923115904_UpdateCategoryModel")]
+    partial class UpdateCategoryModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -110,75 +113,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                     b.HasIndex("CategoryId");
 
                     b.ToTable("Recipes");
-                });
-
-            modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeCacheInvalidation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt")
-                        .HasFilter("\"ProcessedAt\" IS NULL");
-
-                    b.ToTable("RecipeCacheInvalidations");
-                });
-
-            modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeImage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AltText")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<bool>("IsPrimary")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("MediumUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("OriginalUrl")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<Guid>("RecipeId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("StoredFileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ThumbnailUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RecipeId")
-                        .IsUnique()
-                        .HasFilter("\"IsPrimary\" = TRUE");
-
-                    b.HasIndex("StoredFileId")
-                        .IsUnique();
-
-                    b.HasIndex("RecipeId", "OrderIndex");
-
-                    b.ToTable("RecipeImages");
                 });
 
             modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeIngredient", b =>
@@ -282,70 +216,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
-            modelBuilder.Entity("CulinaryBlog.Domain.Entities.StoredFile", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BucketName")
-                        .HasMaxLength(63)
-                        .HasColumnType("character varying(63)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DeletionJobId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime?>("DeletionRequestedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ObjectKey")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UploadExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DeletionRequestedAt")
-                        .HasFilter("\"DeletedAt\" IS NULL AND \"DeletionRequestedAt\" IS NOT NULL AND \"DeletionJobId\" IS NULL");
-
-                    b.HasIndex("OwnerId");
-
-                    b.HasIndex("UploadExpiresAt")
-                        .HasFilter("\"Status\" = 0");
-
-                    b.HasIndex("Url")
-                        .IsUnique();
-
-                    b.HasIndex("BucketName", "ObjectKey")
-                        .IsUnique()
-                        .HasFilter("\"BucketName\" IS NOT NULL AND \"ObjectKey\" IS NOT NULL");
-
-                    b.ToTable("StoredFiles");
-                });
-
             modelBuilder.Entity("CulinaryBlog.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -423,28 +293,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("AspNetUsers", (string)null);
-                });
-
-            modelBuilder.Entity("CulinaryBlog.Infrastructure.Persistence.RecipeListVersion", b =>
-                {
-                    b.Property<int>("Id")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Version")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("RecipeListVersions", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1,
-                            Version = "initial"
-                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
@@ -588,24 +436,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                     b.Navigation("Category");
                 });
 
-            modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeImage", b =>
-                {
-                    b.HasOne("CulinaryBlog.Domain.Entities.Recipe", "Recipe")
-                        .WithMany("Images")
-                        .HasForeignKey("RecipeId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("CulinaryBlog.Domain.Entities.StoredFile", "StoredFile")
-                        .WithOne()
-                        .HasForeignKey("CulinaryBlog.Domain.Entities.RecipeImage", "StoredFileId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Recipe");
-
-                    b.Navigation("StoredFile");
-                });
-
             modelBuilder.Entity("CulinaryBlog.Domain.Entities.RecipeIngredient", b =>
                 {
                     b.HasOne("CulinaryBlog.Domain.Entities.Recipe", "Recipe")
@@ -637,15 +467,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("CulinaryBlog.Domain.Entities.StoredFile", b =>
-                {
-                    b.HasOne("CulinaryBlog.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -706,8 +527,6 @@ namespace CulinaryBlog.Infrastructure.Migrations
 
             modelBuilder.Entity("CulinaryBlog.Domain.Entities.Recipe", b =>
                 {
-                    b.Navigation("Images");
-
                     b.Navigation("Ingredients");
 
                     b.Navigation("Steps");

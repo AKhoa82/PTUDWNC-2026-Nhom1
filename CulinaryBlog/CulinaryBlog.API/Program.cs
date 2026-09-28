@@ -119,10 +119,9 @@ builder.Services.AddOutputCache(options =>
     options.AddPolicy("RecipeDetail", builder => 
         builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
 });
-
-
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddRecipeImageFeature();
+builder.Services.AddControllers();
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -494,5 +493,7 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletion
     "reconcile-file-deletions", job => job.ExecuteAsync(CancellationToken.None), "*/5 * * * *");
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
     "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
+
+app.MapControllers();
 
 app.Run();
