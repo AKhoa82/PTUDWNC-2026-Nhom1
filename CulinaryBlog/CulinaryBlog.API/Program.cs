@@ -152,10 +152,12 @@ app.MapGet("/api/v1/recipes", async (
     {
         if (difficulty.Contains(',') || !Enum.TryParse<RecipeDifficulty>(difficulty, ignoreCase: true, out var diffEnum) || !Enum.IsDefined(diffEnum))
         {
-            return Results.Problem(
-                detail: "difficulty phải là một trong: Easy, Medium, Hard, Expert.",
-                statusCode: 422,
-                title: "Tham số không hợp lệ.");
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    [nameof(GetRecipesQuery.Difficulty)] = ["difficulty phải là một trong: Easy, Medium, Hard, Expert."]
+                },
+                statusCode: 422);
         }
         parsedDifficulty = diffEnum;
     }

@@ -1,8 +1,8 @@
-# FR-SRCH-002 — Lọc công thức (backend)
+# FR-SRCH-002 — Lọc công thức
 
 ## Phạm vi
 
-Hoàn thiện API danh sách hiện có theo FR-RCP-001, FR-SRCH-002 và mô hình dữ liệu 7.2 trong SRS.md. Giao diện được giữ nguyên và sẽ triển khai sau. Chưa tích hợp với endpoint full-text search của FR-SRCH-001.
+Hoàn thiện API danh sách hiện có theo FR-RCP-001, FR-SRCH-002 và mô hình dữ liệu 7.2 trong SRS.md. Theo feedback ngày 28/09/2026, bổ sung minServings vào giao diện /recipes và đồng nhất payload lỗi validation. Chưa tích hợp với endpoint full-text search của FR-SRCH-001.
 
 ## Hợp đồng API
 
@@ -71,6 +71,13 @@ Script HTTP yêu cầu build Debug trước, Python và Docker CLI. Script khở
 
 - Cache danh sách hiện dùng Redis cache-aside với version trong database, không phải policy Output Cache như mô tả FR-RCP-001. Đây là thiết kế hiện có được giữ theo phạm vi triển khai, không coi là đã đáp ứng đúng từng chi tiết kỹ thuật của SRS.
 - Model snapshot chưa có index riêng cho Difficulty/Status như bảng mô hình SRS. Chưa bổ sung migration chỉ dựa trên review này; cần đánh giá truy vấn và kế hoạch triển khai index. Kiểm thử hiện tại xác nhận tính đúng đắn, không thay thế kiểm thử hiệu năng.
-- Lọc trên endpoint full-text search vẫn thuộc đợt triển khai FR-SRCH-001; giao diện vẫn để làm sau theo yêu cầu.
+- Lọc trên endpoint full-text search vẫn thuộc đợt triển khai FR-SRCH-001.
+
+## Hoàn thiện theo feedback ngày 28/09/2026
+
+- Giao diện có input “Số khẩu phần tối thiểu”, type=number, min=1, max=2147483647, step=1, không bắt buộc. Giá trị được đọc từ URL, gửi tới API và giữ trong các liên kết phân trang; để trống không gửi tham số. Submit form trở về trang đầu như các bộ lọc hiện có.
+- Difficulty sai trả Results.ValidationProblem với HTTP 422 và errors.Difficulty là mảng thông báo, cùng tên trường với FluentValidation. `errors` là object ánh xạ tên trường tới mảng thông báo, không phải một mảng phẳng.
+- Script HTTP kiểm tra thêm status/type/title/errors cho mọi trường hợp 422, gồm enum sai và lỗi từ FluentValidation.
+- Build backend đạt 0 warning/error; build production frontend đạt. Kiểm tra render với API giả lập xác nhận input, chuyển minServings xuống API, giữ giá trị trong link phân trang, bỏ tham số khi trống và reset trang khi submit. Chưa chạy thao tác trình duyệt end-to-end trong lần sửa này.
 
 Chưa nâng cấp migration trên database ứng dụng hiện có trong lần kiểm thử này. Khi chạy ứng dụng development, cần dịch vụ Docker hoạt động và connection đúng; user-secrets/biến môi trường có thể ghi đè cấu hình file. Môi trường Production phải cung cấp connection thật qua cấu hình triển khai; giá trị placeholder trong appsettings.json không phải thông tin đăng nhập dùng được.

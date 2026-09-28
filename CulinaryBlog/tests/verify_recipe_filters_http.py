@@ -79,8 +79,14 @@ def main():
                 "maxCookTime=0&minServings=1": 200,
             }
             for query, expected in cases.items():
-                actual, _ = request(query)
+                actual, payload = request(query)
                 assert actual == expected, (query, expected, actual)
+                if expected == 422:
+                    assert payload["status"] == 422 and payload.get("type") and payload.get("title")
+                    field = query.split("=", 1)[0]
+                    field = field[0].upper() + field[1:]
+                    messages = payload["errors"][field]
+                    assert isinstance(messages, list) and messages and all(isinstance(m, str) and m for m in messages)
             _, empty = request("categoryId=" + str(uuid.uuid4()))
             assert empty["items"] == [] and empty["totalCount"] == 0
             _, by_name = request("difficulty=eAsY")
