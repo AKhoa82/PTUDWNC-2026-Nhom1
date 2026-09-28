@@ -1,49 +1,89 @@
-﻿// File: CulinaryBlog.Application/Categories/Commands/CreateCategory/CreateCategoryCommandHandler.cs
-using CulinaryBlog.Application.Contracts.Persistence;
+﻿using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Application.Common.Exceptions;
+using CulinaryBlog.Application.Features.Categories.GetCategories;
 using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-// Giả định bạn có interface IApplicationDbContext
+using Microsoft.Extensions.Caching.Distributed;
+using System.Text.RegularExpressions;
 
 namespace CulinaryBlog.Application.Categories.Commands.CreateCategory;
 
-public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryCommand, Guid>
+public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryCommand, CategoryDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly IDistributedCache _cache;
 
-    public CreateCategoryCommandHandler(IApplicationDbContext context)
+    public CreateCategoryCommandHandler(IApplicationDbContext context, IDistributedCache cache)
     {
         _context = context;
+        _cache = cache;
     }
 
-    public async Task<Guid> Handle(CreateCategoryCommand request, CancellationToken cancellationToken)
+    public async Task<CategoryDto> Handle(CreateCategoryCommand request, CancellationToken cancellationToken)
     {
-        // 1. Kiểm tra tên danh mục đã tồn tại chưa (tuỳ chọn nhưng nên có)
         var isExist = await _context.Categories
             .AnyAsync(c => c.Name.ToLower() == request.Name.ToLower(), cancellationToken);
             
         if (isExist)
         {
-            throw new Exception("Tên danh mục đã tồn tại!"); // Có thể dùng Custom Exception (ví dụ: DuplicateException)
+            throw new ConflictException("Tên danh mục đã tồn tại!"); 
         }
 
-        // 2. Tạo Slug từ Name (Bạn có thể viết một Helper riêng cho việc này)
-        var slug = GenerateSlug(request.Name);
+        var slug = await GenerateUniqueSlugAsync(request.Name, cancellationToken);
 
-        // 3. Khởi tạo Entity (Ở đây có thể dùng Mapster nếu muốn, nhưng với logic ít thuộc tính thì gọi constructor sẽ rõ ràng hơn)
-        var category = new Category(request.Name, slug, request.Description);
+        var category = new Category
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name.Trim(),
+            Slug = slug,
+            Description = request.Description?.Trim(),
+            CreatedAt = DateTime.UtcNow
+        };
 
-        // 4. Lưu vào Database
         _context.Categories.Add(category);
         await _context.SaveChangesAsync(cancellationToken);
 
-        return category.Id;
+        await GetCategoriesQueryHandler.InvalidateCacheAsync(_cache, cancellationToken);
+
+        return new CategoryDto
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Slug = category.Slug,
+            Description = category.Description,
+            RecipeCount = 0
+        };
     }
 
-    // Hàm hỗ trợ tạo Slug đơn giản
-    private static string GenerateSlug(string phrase)
+    private async Task<string> GenerateUniqueSlugAsync(string name, CancellationToken cancellationToken)
     {
-        // Bạn nên dùng một thư viện chuyên dụng như Slugify.Core hoặc viết hàm Regex xử lý tiếng Việt
-        return phrase.ToLower().Replace(" ", "-"); 
+        string str = name.Trim().ToLower();
+        string[] vietnameseSigns = new string[] {
+            "aàảãáạăằẳẵắặâầẩẫấậ", "dđ", "eèẻẽéẹêềểễếệ", "iìỉĩíị",
+            "oòỏõóọôồổỗốộơờởỡớợ", "uùủũúụưừửữứự", "yỳỷỹýỵ"
+        };
+        char[] replaceChars = new char[] { 'a', 'd', 'e', 'i', 'o', 'u', 'y' };
+        
+        for (int i = 0; i < vietnameseSigns.Length; i++)
+        {
+            for (int j = 0; j < vietnameseSigns[i].Length; j++)
+            {
+                str = str.Replace(vietnameseSigns[i][j], replaceChars[i]);
+            }
+        }
+        str = Regex.Replace(str, @"[^a-z0-9\s-]", "");
+        var baseSlug = Regex.Replace(str, @"\s+", "-").Trim('-');
+
+        var slug = baseSlug;
+        int counter = 1;
+        
+        while (await _context.Categories.AnyAsync(c => c.Slug == slug, cancellationToken))
+        {
+            slug = $"{baseSlug}-{counter}";
+            counter++;
+        }
+        return slug;
     }
 }

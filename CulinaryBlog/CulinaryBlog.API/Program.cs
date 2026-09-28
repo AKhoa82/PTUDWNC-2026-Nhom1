@@ -85,6 +85,7 @@ builder.Services.AddOutputCache(options =>
         builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
 });
 builder.Services.AddOpenApi();
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
@@ -522,6 +523,8 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 }
+
+app.MapControllers();
 
 app.Run();
 

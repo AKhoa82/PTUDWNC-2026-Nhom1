@@ -1,15 +1,13 @@
-﻿// File: CulinaryBlog.Api/Controllers/CategoriesController.cs
-using MediatR;
+﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CulinaryBlog.Application.Categories.Commands.CreateCategory;
-using CulinaryBlog.Application.Categories.Commands.UpdateCategory;
 using CulinaryBlog.Application.Features.Categories.Commands.UpdateCategory;
 
 namespace CulinaryBlog.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")] // Thêm /v1 để đồng bộ với API lấy danh mục
 public class CategoriesController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -23,30 +21,29 @@ public class CategoriesController : ControllerBase
     /// FR-CAT-003: Tạo danh mục mới
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Admin")] // Chặn quyền, chỉ Admin được phép tạo
+    [Authorize(Roles = "Admin")] 
     public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryCommand command)
     {
-        var categoryId = await _mediator.Send(command);
+        var categoryDto = await _mediator.Send(command);
         
-        // Trả về HTTP 201 Created cùng với Id của danh mục mới tạo
-        return CreatedAtAction(nameof(CreateCategory), new { id = categoryId }, new { Id = categoryId, Message = "Tạo danh mục thành công!" });
+        // Trả về HTTP 201 Created cùng với đối tượng CategoryDto
+        return CreatedAtAction(nameof(CreateCategory), new { id = categoryDto.Id }, categoryDto);
     }
 
     /// <summary>
     /// FR-CAT-004: Cập nhật danh mục
     /// </summary>
     [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")] // Chặn quyền, chỉ Admin được phép cập nhật
+    [Authorize(Roles = "Admin")] 
     public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] UpdateCategoryRequest request)
     {
-        // Map từ Request HTTP sang Command
         var command = new UpdateCategoryCommand(id, request.Name, request.Description);
         
-        await _mediator.Send(command);
+        var categoryDto = await _mediator.Send(command);
 
-        return Ok(new { Message = "Cập nhật danh mục thành công!" });
+        // Trả về HTTP 200 OK với đối tượng CategoryDto
+        return Ok(categoryDto);
     }
 }
 
-// Lớp phụ trợ để nhận dữ liệu từ Body (Tránh yêu cầu client phải truyền ID trong Body)
 public record UpdateCategoryRequest(string Name, string? Description);
