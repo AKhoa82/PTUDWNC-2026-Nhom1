@@ -16,11 +16,11 @@ public class UpdateRecipeCommandHandlerTests
         public Task<string?> GetRecipeListVersionAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>("test");
         public DbSet<Recipe> Recipes => Set<Recipe>();
         public DbSet<Category> Categories => Set<Category>();
-        public DbSet<User> Users => throw new NotSupportedException();
+        public DbSet<User> Users => Set<User>();
         public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
         public DbSet<RecipeStep> RecipeSteps => Set<RecipeStep>();
-        public DbSet<RefreshToken> RefreshTokens => throw new NotSupportedException();
-        public DbSet<StoredFile> StoredFiles => throw new NotSupportedException();
+        public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+        public DbSet<StoredFile> StoredFiles => Set<StoredFile>();
         public DbSet<RecipeCacheInvalidation> RecipeCacheInvalidations => Set<RecipeCacheInvalidation>();
         public DbSet<RecipeImage> RecipeImages => Set<RecipeImage>();
         
