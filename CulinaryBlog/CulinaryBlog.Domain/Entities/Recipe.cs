@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using CulinaryBlog.Domain.Exceptions;
 
 namespace CulinaryBlog.Domain.Entities;
 
@@ -80,5 +81,27 @@ public class Recipe
     public void ClearNutrition()
     {
         Nutrition = null;
+    }
+
+    public void Publish()
+    {
+        if (Steps is null || Steps.Count == 0)
+        {
+            throw new DomainException("Recipe phải có ít nhất 1 bước thực hiện trước khi xuất bản.");
+        }
+        if (Ingredients is null || Ingredients.Count == 0)
+        {
+            throw new DomainException("Recipe phải có ít nhất 1 nguyên liệu trước khi xuất bản.");
+        }
+
+        Status = RecipeStatus.Published;
+        PublishedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Unpublish()
+    {
+        Status = RecipeStatus.Draft;
+        UpdatedAt = DateTime.UtcNow;
     }
 }

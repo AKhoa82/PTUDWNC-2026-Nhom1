@@ -178,6 +178,7 @@ app.MapAuthEndpoints();
 app.MapRecipeImageEndpoints();
 app.MapRecipeIngredientEndpoints();
 app.MapRecipeStepEndpoints();
+app.MapRecipeEndpoints();
 
 if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
 {
@@ -376,7 +377,6 @@ app.MapPost("/api/v1/recipes", async (
 
 app.MapPut("/api/v1/recipes/{id:guid}", async (
     Guid id,
-    CreateRecipeRequest body, 
     CulinaryBlog.Application.DTOs.UpdateRecipeRequest request,
     IMediator mediator,
     System.Security.Claims.ClaimsPrincipal user,
