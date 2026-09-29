@@ -25,6 +25,16 @@ type Category = { id: string; name: string };
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api").replace(/\/$/, "");
 const fieldClass = "w-full rounded-lg border border-[#d8d0c0] bg-white p-3 text-[#022c24]";
 const linkClass = "rounded-lg border border-[#d8d0c0] px-4 py-2 hover:bg-[#e9e2d3] focus-visible:outline-2";
+const sortOptions = [
+  { value: "-createdAt", label: "Mới nhất" },
+  { value: "createdAt", label: "Cũ nhất" },
+  { value: "title", label: "Tên A–Z" },
+  { value: "-title", label: "Tên Z–A" },
+  { value: "cookTime", label: "Nấu nhanh nhất" },
+  { value: "-cookTime", label: "Nấu lâu nhất" },
+  { value: "-publishedAt", label: "Xuất bản mới nhất" },
+  { value: "publishedAt", label: "Xuất bản cũ nhất" },
+];
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
@@ -42,11 +52,14 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
   const pageSize = Number(value("pageSize", "12"));
   const validPage = Number.isInteger(page) && page >= 1 && page <= 2147483647;
   const validSize = Number.isInteger(pageSize) && pageSize >= 1 && pageSize <= 50;
+  // Match the API fallback so the selected option always describes the results.
+  const sort = sortOptions.find(option => option.value === value("sort").trim())?.value ?? "-createdAt";
   const query = new URLSearchParams();
-  for (const key of ["keyword", "categoryId", "difficulty", "maxCookTime", "minServings", "sort"]) {
+  for (const key of ["keyword", "categoryId", "difficulty", "maxCookTime", "minServings"]) {
     const input = value(key).trim();
     if (input) query.set(key, input);
   }
+  query.set("sort", sort);
   query.set("page", String(page));
   query.set("pageSize", String(pageSize));
   const pageHref = (target: number) => {
@@ -95,8 +108,8 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
         <label className="space-y-1">Thời gian nấu tối đa (phút)<input name="maxCookTime" type="number" min="0" max="2147483647" defaultValue={value("maxCookTime")} className={fieldClass} /></label>
         <label className="space-y-1">Số khẩu phần tối thiểu<input name="minServings" type="number" min="1" max="2147483647" step="1" defaultValue={value("minServings")} className={fieldClass} /></label>
         <label className="space-y-1">Sắp xếp
-          <select name="sort" defaultValue={value("sort", "-createdAt")} className={fieldClass}>
-            <option value="-createdAt">Mới nhất</option><option value="createdAt">Cũ nhất</option><option value="title">Tên A–Z</option><option value="-title">Tên Z–A</option><option value="cookTime">Nấu nhanh nhất</option><option value="-cookTime">Nấu lâu nhất</option><option value="-publishedAt">Xuất bản mới nhất</option><option value="publishedAt">Xuất bản cũ nhất</option>
+          <select key={sort} name="sort" defaultValue={sort} className={fieldClass}>
+            {sortOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
         <label className="space-y-1">Kết quả mỗi trang<input name="pageSize" type="number" min="1" max="50" required defaultValue={validSize ? pageSize : 12} className={fieldClass} /></label>
