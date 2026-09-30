@@ -277,6 +277,7 @@ app.MapGet("/api/v1/recipes", async (
     }
 })
 .WithName("GetRecipesV1")
+.WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt. Giá trị rỗng hoặc không hỗ trợ dùng mặc định. Sắp xếp trước phân trang, dùng Id tăng dần khi trùng giá trị.")
 .WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
 .AllowAnonymous();
 

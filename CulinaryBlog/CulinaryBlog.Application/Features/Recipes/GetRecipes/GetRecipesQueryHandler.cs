@@ -178,10 +178,10 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         return $"{CacheKeyPrefix}v2:{Convert.ToHexString(SHA256.HashData(payload))}";
     }
 
-    private static string NormalizeSort(string? sort) => sort switch
+    private static string NormalizeSort(string? sort) => sort?.Trim() switch
     {
         "createdAt" or "-createdAt" or "title" or "-title" or
-        "cookTime" or "-cookTime" or "publishedAt" or "-publishedAt" => sort,
+        "cookTime" or "-cookTime" or "publishedAt" or "-publishedAt" => sort.Trim(),
         _ => "-createdAt"
     };
 
