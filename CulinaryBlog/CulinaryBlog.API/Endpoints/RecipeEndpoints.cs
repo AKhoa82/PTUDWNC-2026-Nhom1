@@ -1,6 +1,7 @@
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Recipes.Commands.PublishRecipe;
 using CulinaryBlog.Application.Features.Recipes.Commands.UnpublishRecipe;
+using CulinaryBlog.Application.Features.Recipes.Commands.ArchiveRecipe;
 using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -85,6 +86,42 @@ public static class RecipeEndpoints
         .WithName("UnpublishRecipe")
         .WithSummary("Hủy xuất bản công thức nấu ăn")
         .WithDescription("Đưa công thức trở lại trạng thái Draft (chỉ tác giả hoặc admin mới thấy).")
+        .RequireAuthorization()
+        .Produces<RecipeDetailDto>(200)
+        .ProducesProblem(401)
+        .ProducesProblem(403)
+        .ProducesProblem(404);
+
+        // PATCH /api/v1/recipes/{id}/archive - Lưu trữ công thức
+        group.MapPatch("/{id:guid}/archive", async (
+            Guid id,
+            ISender sender,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+                var isAdmin = user.IsInRole("Admin");
+                var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, isAdmin), ct);
+                return Results.Ok(result);
+            }
+            catch (DomainException ex)
+            {
+                return Results.UnprocessableEntity(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Results.Problem(statusCode: 403, detail: ex.Message);
+            }
+            catch (NotFoundException ex)
+            {
+                return Results.NotFound(new { message = ex.Message });
+            }
+        })
+        .WithName("ArchiveRecipe")
+        .WithSummary("Lưu trữ công thức nấu ăn")
+        .WithDescription("Chuyển công thức sang trạng thái Archived. Recipe không xuất hiện trong public listing.")
         .RequireAuthorization()
         .Produces<RecipeDetailDto>(200)
         .ProducesProblem(401)
