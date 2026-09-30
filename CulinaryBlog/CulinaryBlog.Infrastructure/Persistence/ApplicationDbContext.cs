@@ -77,6 +77,12 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.HasPostgresExtension("unaccent");
+        modelBuilder.HasPostgresExtension("pg_trgm");
+        modelBuilder.Entity<Recipe>().Property<NpgsqlTypes.NpgsqlTsVector>("SearchVector")
+            .HasColumnType("tsvector").ValueGeneratedOnAddOrUpdate();
+        modelBuilder.Entity<Recipe>().HasIndex("SearchVector")
+            .HasDatabaseName("IDX_Recipe_Search").HasMethod("GIN");
         modelBuilder.Entity<Recipe>().OwnsOne(r => r.Nutrition);
         modelBuilder.Entity<RecipeCacheInvalidation>().HasIndex(x => x.CreatedAt).HasFilter("\"ProcessedAt\" IS NULL");
 

@@ -50,8 +50,9 @@ khác nhau; có ít nhất 2 công thức cùng thời gian nấu. Đặt `pageS
    trang vẫn dùng `sort=-createdAt`. Từ trang 2, chọn “Tên Z–A” và nhấn
    “Tìm kiếm”: trở về trang 1, giữ bộ lọc và kích thước trang.
 
-Endpoint tìm kiếm toàn văn riêng `/recipes/search` chưa có trong dự án;
-tìm kiếm kết hợp sắp xếp hiện dùng `keyword` tại endpoint danh sách.
+Endpoint tìm kiếm toàn văn riêng `/api/v1/recipes/search` và trang `/search`
+đã được bổ sung trong [FR-SRCH-001](FR-SRCH-001.md), xếp theo độ liên quan.
+Tìm kiếm kết hợp sắp xếp tại endpoint danh sách vẫn dùng `keyword`.
 
 ## Kiểm thử tự động
 
