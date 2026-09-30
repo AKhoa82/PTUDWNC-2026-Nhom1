@@ -104,4 +104,22 @@ public class Recipe
         Status = RecipeStatus.Draft;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    public void Archive() 
+    {
+        if (Status == RecipeStatus.Archived)
+            return;
+
+        Status = RecipeStatus.Archived;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Unarchive() 
+    {
+        if (Status != RecipeStatus.Archived)
+            return;
+
+        Status = RecipeStatus.Draft;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }
