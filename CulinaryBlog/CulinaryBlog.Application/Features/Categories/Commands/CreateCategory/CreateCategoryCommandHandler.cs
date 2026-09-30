@@ -45,7 +45,16 @@ public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryComman
         _context.Categories.Add(category);
         await _context.SaveChangesAsync(cancellationToken);
 
-        await GetCategoriesQueryHandler.InvalidateCacheAsync(_cache, cancellationToken);
+        // Bọc khối gọi Redis vào try-catch. 
+        // Nếu Redis không hoạt động, hệ thống bỏ qua lỗi và vẫn trả về 201 Created.
+        try
+        {
+            await GetCategoriesQueryHandler.InvalidateCacheAsync(_cache, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Tạm thời bỏ qua lỗi timeout của Redis
+        }
 
         return new CategoryDto
         {

@@ -22,6 +22,9 @@ using Npgsql;
 using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 using CulinaryBlog.Application.DTOs;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using System.Text.Json;
+using CulinaryBlog.Application.Features.Sitemap.Queries;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -83,9 +86,23 @@ builder.Services.AddOutputCache(options =>
 {
     options.AddPolicy("RecipeDetail", builder => 
         builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
+    // Policy cho Sitemap: Cache 12 tiếng
+    options.AddPolicy("SitemapCache", builder => 
+        builder.Expire(TimeSpan.FromHours(12)).Tag("sitemap"));
 });
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
+
+// Đăng ký Health Checks cho Database và Redis
+builder.Services.AddHealthChecks()
+    .AddNpgSql(
+        builder.Configuration.GetConnectionString("DefaultConnection")!,
+        name: "PostgreSQL",
+        timeout: TimeSpan.FromSeconds(3))
+    .AddRedis(
+        builder.Configuration.GetConnectionString("Redis")!,
+        name: "Redis Cache",
+        timeout: TimeSpan.FromSeconds(3));
 
 var app = builder.Build();
 
@@ -224,137 +241,6 @@ app.MapGet("/api/v1/recipes/{slug}", async (
 .CacheOutput("RecipeDetail")
 .AllowAnonymous();
 
-// --- 1. TẠO DANH MỤC MỚI ---
-app.MapPost("/api/v1/categories", async (
-    CreateCategoryRequest request,
-    ApplicationDbContext dbContext,
-    CancellationToken cancellationToken) =>
-{
-    // Kiểm tra Name rỗng
-    if (string.IsNullOrWhiteSpace(request.Name))
-    {
-        return Results.BadRequest(new { message = "Tên danh mục (Name) không được để trống." });
-    }
-
-    // Kiểm tra độ dài Name
-    if (request.Name.Trim().Length > 100)
-    {
-        return Results.BadRequest(new { message = "Tên danh mục không được vượt quá 100 ký tự." });
-    }
-
-    // Tự động tạo Slug nếu rỗng
-    string slug = string.IsNullOrWhiteSpace(request.Slug) 
-        ? SlugHelper.GenerateSlug(request.Name) 
-        : request.Slug.Trim().ToLower();
-
-    // Kiểm tra định dạng Slug (tránh lỗi 500 khi Regex null/không hợp lệ)
-    if (string.IsNullOrWhiteSpace(slug) || !System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9]+(?:-[a-z0-9]+)*$"))
-    {
-        return Results.BadRequest(new { 
-            message = "Slug không hợp lệ! Slug chỉ được chứa chữ cái thường, số và dấu gạch ngang (Ví dụ: mon-an-vat)." 
-        });
-    }
-
-    // Kiểm tra độ dài Description
-    if (request.Description?.Length > 500)
-    {
-        return Results.BadRequest(new { message = "Mô tả danh mục không được vượt quá 500 ký tự." });
-    }
-
-    // Kiểm tra Slug trùng lặp
-    var isSlugExists = await dbContext.Categories
-        .AnyAsync(c => c.Slug == slug, cancellationToken);
-
-    if (isSlugExists)
-    {
-        return Results.BadRequest(new { message = $"Slug '{slug}' đã tồn tại. Vui lòng chọn Slug khác." });
-    }
-
-    var category = new Category
-    {
-        Id = Guid.NewGuid(),
-        Name = request.Name.Trim(),
-        Slug = slug,
-        Description = request.Description?.Trim(),
-        CreatedAt = DateTime.UtcNow
-    };
-
-    dbContext.Categories.Add(category);
-    await dbContext.SaveChangesAsync(cancellationToken);
-
-    return Results.Created($"/api/categories/{category.Slug}", category);
-})
-.WithName("CreateCategoryV1")
-.WithSummary("Tạo danh mục mới [Admin]")
-.AllowAnonymous();
-
-// --- 2. CẬP NHẬT DANH MỤC ---
-app.MapPut("/api/v1/categories/{id:guid}", async (
-    Guid id,
-    UpdateCategoryRequest request,
-    ApplicationDbContext dbContext,
-    CancellationToken cancellationToken) =>
-{
-    // Tìm danh mục theo ID
-    var category = await dbContext.Categories.FindAsync(new object[] { id }, cancellationToken);
-    if (category is null)
-    {
-        return Results.NotFound(new { message = $"Không tìm thấy danh mục với ID: '{id}'." });
-    }
-
-    // Kiểm tra Name rỗng
-    if (string.IsNullOrWhiteSpace(request.Name))
-    {
-        return Results.BadRequest(new { message = "Tên danh mục (Name) không được để trống." });
-    }
-
-    // Kiểm tra độ dài Name
-    if (request.Name.Trim().Length > 100)
-    {
-        return Results.BadRequest(new { message = "Tên danh mục không được vượt quá 100 ký tự." });
-    }
-
-    // Tự động sinh Slug nếu để trống
-    string slug = string.IsNullOrWhiteSpace(request.Slug)
-        ? SlugHelper.GenerateSlug(request.Name)
-        : request.Slug.Trim().ToLower();
-
-    // Kiểm tra định dạng Slug
-    if (string.IsNullOrWhiteSpace(slug) || !System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9]+(?:-[a-z0-9]+)*$"))
-    {
-        return Results.BadRequest(new { 
-            message = "Slug không hợp lệ! Slug chỉ được chứa chữ cái thường, số và dấu gạch ngang (Ví dụ: mon-an-vat)." 
-        });
-    }
-
-    // Kiểm tra độ dài Description
-    if (request.Description?.Length > 500)
-    {
-        return Results.BadRequest(new { message = "Mô tả danh mục không được vượt quá 500 ký tự." });
-    }
-
-    // Kiểm tra Slug trùng với danh mục khác (c.Id != id)
-    var isSlugExists = await dbContext.Categories
-        .AnyAsync(c => c.Slug == slug && c.Id != id, cancellationToken);
-
-    if (isSlugExists)
-    {
-        return Results.BadRequest(new { message = $"Slug '{slug}' đã được sử dụng bởi một danh mục khác. Vui lòng chọn Slug khác." });
-    }
-
-    // Cập nhật thông tin
-    category.Name = request.Name.Trim();
-    category.Slug = slug;
-    category.Description = request.Description?.Trim();
-
-    await dbContext.SaveChangesAsync(cancellationToken);
-
-    return Results.Ok(new { message = "Cập nhật danh mục thành công.", data = category });
-})
-.WithName("UpdateCategoryV1")
-.WithSummary("Cập nhật danh mục theo ID [Admin]")
-.AllowAnonymous();
-
 app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
@@ -410,6 +296,45 @@ app.MapPost("/api/v1/recipes", async (
 })
 .WithName("CreateRecipeV1")
 .WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
+
+// Endpoint Sitemap XML (Cache 12 tiếng)
+app.MapGet("/sitemap.xml", async (
+    IMediator mediator,
+    IConfiguration config,
+    CancellationToken cancellationToken) =>
+{
+    var frontendUrl = config["FrontendUrl"] ?? "http://localhost:3000";
+    var sitemapXml = await mediator.Send(new GetSitemapQuery(frontendUrl), cancellationToken);
+    return Results.Text(sitemapXml, "application/xml", Encoding.UTF8);
+})
+.WithName("GetSitemapXml")
+.WithSummary("FR-JOB-003: Tạo Sitemap XML cho SEO (Cache 12h)")
+.CacheOutput("SitemapCache")
+.AllowAnonymous();
+
+// Endpoint Health Check với Response format chuẩn JSON
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            Status = report.Status.ToString(),
+            Checks = report.Entries.Select(e => new
+            {
+                Component = e.Key,
+                Status = e.Value.Status.ToString(),
+                Description = e.Value.Description ?? "OK",
+                Duration = e.Value.Duration.ToString()
+            }),
+            TotalDuration = report.TotalDuration
+        };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+})
+.WithName("HealthCheck")
+.WithSummary("FR-OBS-001: Kiểm tra sức khỏe hệ thống (Database, Redis)");
 
 using (var scope = app.Services.CreateScope())
 {

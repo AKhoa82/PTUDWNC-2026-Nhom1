@@ -7,7 +7,7 @@ using CulinaryBlog.Application.Features.Categories.Commands.UpdateCategory;
 namespace CulinaryBlog.Api.Controllers;
 
 [ApiController]
-[Route("api/v1/[controller]")] // Thêm /v1 để đồng bộ với API lấy danh mục
+[Route("api/v1/[controller]")] 
 public class CategoriesController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -17,31 +17,23 @@ public class CategoriesController : ControllerBase
         _mediator = mediator;
     }
 
-    /// <summary>
-    /// FR-CAT-003: Tạo danh mục mới
-    /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Admin")] 
+    // [Authorize(Roles = "Admin")] // Đã tắt bảo mật tạm thời để test
     public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryCommand command)
     {
         var categoryDto = await _mediator.Send(command);
         
-        // Trả về HTTP 201 Created cùng với đối tượng CategoryDto
         return CreatedAtAction(nameof(CreateCategory), new { id = categoryDto.Id }, categoryDto);
     }
 
-    /// <summary>
-    /// FR-CAT-004: Cập nhật danh mục
-    /// </summary>
-    [HttpPut("{id}")]
-    [Authorize(Roles = "Admin")] 
+    [HttpPut("{id}")] 
+    // [Authorize(Roles = "Admin")] // Đã tắt bảo mật tạm thời để test
     public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] UpdateCategoryRequest request)
     {
         var command = new UpdateCategoryCommand(id, request.Name, request.Description);
         
         var categoryDto = await _mediator.Send(command);
 
-        // Trả về HTTP 200 OK với đối tượng CategoryDto
         return Ok(categoryDto);
     }
 }

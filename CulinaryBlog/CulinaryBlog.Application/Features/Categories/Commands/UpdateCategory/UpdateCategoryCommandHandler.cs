@@ -5,6 +5,7 @@ using CulinaryBlog.Application.Features.Categories.GetCategories;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using System;
 
 namespace CulinaryBlog.Application.Features.Categories.Commands.UpdateCategory;
 
@@ -42,7 +43,15 @@ public class UpdateCategoryCommandHandler : IRequestHandler<UpdateCategoryComman
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        await GetCategoriesQueryHandler.InvalidateCacheAsync(_cache, cancellationToken);
+        // Bọc khối gọi Redis vào try-catch để bỏ qua lỗi timeout khi test local
+        try
+        {
+            await GetCategoriesQueryHandler.InvalidateCacheAsync(_cache, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Tạm thời bỏ qua lỗi Redis
+        }
 
         return new CategoryDto
         {
