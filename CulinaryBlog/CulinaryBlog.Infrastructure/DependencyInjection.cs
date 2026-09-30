@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<IRecipeImageTransactionFactory, RecipeImageTransactionFactory>();
         services.AddScoped<IFileLifecycleSessionFactory, FileLifecycleSessionFactory>();
         services.AddScoped<StorageMaintenanceService>();
+        services.AddScoped<CulinaryBlog.Application.Features.Recipes.SearchRecipes.IRecipeSearchService, RecipeSearchService>();
         services.AddScoped<DeleteStoredFileJob>();
         services.AddScoped<FileDeletionReconciliationJob>();
 

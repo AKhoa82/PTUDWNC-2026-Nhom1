@@ -88,6 +88,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
       <header className="space-y-2">
         <Link href="/" className="text-sm underline">CulinaryBlog</Link>
         <h1 className="text-3xl font-bold">Khám phá công thức</h1>
+        <Link href="/search" className="inline-block underline">Tìm kiếm toàn văn (hỗ trợ không dấu)</Link>
         <p>Tìm món ăn yêu thích và khám phá những ý tưởng cho bữa ăn tiếp theo.</p>
       </header>
 

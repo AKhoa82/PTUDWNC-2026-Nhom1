@@ -281,6 +281,27 @@ app.MapGet("/api/v1/recipes", async (
 .WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
 .AllowAnonymous();
 
+app.MapGet("/api/v1/recipes/search", async (
+    IMediator mediator, CancellationToken cancellationToken,
+    string? q = null, int page = 1, int pageSize = 12) =>
+{
+    try
+    {
+        return Results.Ok(await mediator.Send(
+            new CulinaryBlog.Application.Features.Recipes.SearchRecipes.SearchRecipesQuery(q, page, pageSize),
+            cancellationToken));
+    }
+    catch (FluentValidation.ValidationException exception)
+    {
+        return Results.ValidationProblem(exception.Errors.GroupBy(error => error.PropertyName)
+            .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()),
+            statusCode: 422);
+    }
+})
+.WithName("SearchRecipesV1")
+.WithSummary("FR-SRCH-001 – Tìm kiếm toàn văn, không dấu, tiền tố; xếp hạng độ liên quan.")
+.AllowAnonymous();
+
 app.MapGet("/api/v1/recipes/{slug}", async (
     string slug,
     IMediator mediator,
