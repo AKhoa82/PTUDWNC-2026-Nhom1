@@ -10,6 +10,7 @@ using System.Security.Claims;
 
 using CulinaryBlog.Domain.Exceptions;
 using CulinaryBlog.Application.Common.Exceptions;
+using CulinaryBlog.Application.Features.Recipes.Commands.DeleteRecipe;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -127,6 +128,55 @@ public static class RecipeEndpoints
         .ProducesProblem(401)
         .ProducesProblem(403)
         .ProducesProblem(404);
+
+        group.MapDelete("/{id:guid}", async (
+            Guid id,
+            ISender sender,
+            ClaimsPrincipal user,
+            CancellationToken cancellationToken) =>
+        {
+            var currentUserId =
+                user.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrWhiteSpace(currentUserId))
+            {
+                return Results.Forbid();
+            }
+
+            var isAdmin = user.IsInRole("Admin");
+
+            try
+            {
+                await sender.Send(
+                    new DeleteRecipeCommand(
+                        id,
+                        currentUserId,
+                        isAdmin),
+                    cancellationToken);
+
+                return Results.NoContent();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (NotFoundException ex)
+            {
+                return Results.NotFound(new
+                {
+                    message = ex.Message
+                });
+            }
+        })
+        .WithName("DeleteRecipe")
+        .WithSummary("FR-RCP-007 - Xóa công thức")
+        .WithDescription(
+            "Xóa mềm công thức. Chỉ tác giả sở hữu hoặc Admin được phép thực hiện.")
+        .RequireAuthorization()
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 
         return app;
     }

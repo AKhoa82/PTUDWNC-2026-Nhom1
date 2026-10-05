@@ -47,6 +47,8 @@ public class Recipe
     [Timestamp]
     public byte[]? RowVersion { get; set; }
 
+    public bool IsDeleted { get; set; }
+
     public ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
     public ICollection<RecipeImage> Images { get; set; } = new List<RecipeImage>();
@@ -120,6 +122,15 @@ public class Recipe
             return;
 
         Status = RecipeStatus.Draft;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SoftDelete() 
+    {
+        if (IsDeleted)
+            return;
+
+        IsDeleted = true;
         UpdatedAt = DateTime.UtcNow;
     }
 }
