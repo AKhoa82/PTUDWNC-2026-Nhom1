@@ -1,8 +1,9 @@
+using CulinaryBlog.Domain.Common;
+
 namespace CulinaryBlog.Domain.Entities;
 
-public class RefreshToken
+public class RefreshToken : BaseEntity
 {
-    public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }

@@ -1,8 +1,8 @@
+using CulinaryBlog.Domain.Common;
+
 namespace CulinaryBlog.Domain.Entities;
 
-public sealed class RecipeCacheInvalidation
+public sealed class RecipeCacheInvalidation : AuditableEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ProcessedAt { get; set; }
 }

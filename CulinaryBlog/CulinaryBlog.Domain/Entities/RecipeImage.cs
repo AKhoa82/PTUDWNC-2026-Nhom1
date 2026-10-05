@@ -1,8 +1,9 @@
+using CulinaryBlog.Domain.Common;
+
 namespace CulinaryBlog.Domain.Entities;
 
-public sealed class RecipeImage
+public sealed class RecipeImage : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public Guid RecipeId { get; set; }
     public Recipe Recipe { get; set; } = null!;
     public Guid? StoredFileId { get; set; }

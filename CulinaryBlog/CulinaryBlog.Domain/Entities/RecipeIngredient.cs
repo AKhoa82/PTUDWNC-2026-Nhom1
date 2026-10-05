@@ -1,8 +1,9 @@
+using CulinaryBlog.Domain.Common;
+
 namespace CulinaryBlog.Domain.Entities;
 
-public class RecipeIngredient
+public class RecipeIngredient : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public Guid RecipeId { get; set; }
     public string Name { get; set; } = string.Empty;
     public decimal? Quantity { get; set; }
@@ -16,7 +17,6 @@ public class RecipeIngredient
     {
         return new RecipeIngredient
         {
-            Id = Guid.NewGuid(),
             RecipeId = recipeId,
             Name = name,
             Quantity = quantity,
