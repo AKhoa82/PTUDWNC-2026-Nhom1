@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using CulinaryBlog.Domain.Common;
 using CulinaryBlog.Domain.Exceptions;
 
 namespace CulinaryBlog.Domain.Entities;
@@ -18,9 +19,8 @@ public enum RecipeDifficulty
     Expert = 4
 }
 
-public class Recipe
+public class Recipe : AuditableEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
@@ -38,8 +38,6 @@ public class Recipe
 
     public string? AuthorId { get; set; }
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 
     public RecipeNutrition? Nutrition { get; set; }

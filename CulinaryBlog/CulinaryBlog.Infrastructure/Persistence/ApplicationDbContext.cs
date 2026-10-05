@@ -1,4 +1,5 @@
 using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Domain.Common;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -19,14 +20,32 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        UpdateAuditableEntities();
         UpdateRecipeListVersion();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        UpdateAuditableEntities();
         UpdateRecipeListVersion();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void UpdateAuditableEntities()
+    {
+        foreach (var entry in ChangeTracker.Entries<AuditableEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    entry.Entity.CreatedAt = DateTime.UtcNow;
+                    break;
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    break;
+            }
+        }
     }
 
     private void UpdateRecipeListVersion()
