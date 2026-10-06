@@ -33,6 +33,8 @@ public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeComm
         _context.Recipes.Update(recipe);
         await _context.SaveChangesAsync(ct);
 
-        return recipe.Adapt<RecipeDetailDto>();
+        var result = recipe.Adapt<RecipeDetailDto>();
+        result.RowVersion = recipe.RowVersion.ToString();
+        return result;
     }
 }

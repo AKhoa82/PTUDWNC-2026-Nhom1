@@ -2,7 +2,7 @@ using CulinaryBlog.Domain.Common;
 
 namespace CulinaryBlog.Domain.Entities;
 
-public class RecipeIngredient : BaseEntity
+public class RecipeIngredient : AuditableEntity
 {
     public Guid RecipeId { get; set; }
     public string Name { get; set; } = string.Empty;

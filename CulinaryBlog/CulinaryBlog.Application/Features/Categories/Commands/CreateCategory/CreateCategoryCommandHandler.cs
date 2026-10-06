@@ -1,4 +1,4 @@
-﻿using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Common.Exceptions;
 using CulinaryBlog.Application.Features.Categories.GetCategories;
@@ -38,8 +38,7 @@ public class CreateCategoryCommandHandler : IRequestHandler<CreateCategoryComman
             Id = Guid.NewGuid(),
             Name = request.Name.Trim(),
             Slug = slug,
-            Description = request.Description?.Trim(),
-            CreatedAt = DateTime.UtcNow
+            Description = request.Description?.Trim()
         };
 
         _context.Categories.Add(category);

@@ -44,7 +44,7 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
         }
 
         // Gán OriginalValue cho RowVersion để EF Core phát hiện thay đổi đồng thời
-        byte[] clientRowVersion = Convert.FromBase64String(request.Request.RowVersion);
+        uint clientRowVersion = uint.Parse(request.Request.RowVersion);
         _context.Recipes.Entry(recipe).Property(r => r.RowVersion).OriginalValue = clientRowVersion;
 
         recipe.Update(
@@ -81,6 +81,8 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
             throw new ConflictException("Dữ liệu đã bị thay đổi bởi người dùng khác. Vui lòng tải lại trang.");
         }
 
-        return recipe.Adapt<RecipeDetailDto>();
+        var result = recipe.Adapt<RecipeDetailDto>();
+        result.RowVersion = recipe.RowVersion.ToString();
+        return result;
     }
 }

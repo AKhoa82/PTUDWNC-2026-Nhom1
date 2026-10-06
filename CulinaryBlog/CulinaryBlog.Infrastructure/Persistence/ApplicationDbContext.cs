@@ -39,10 +39,14 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
             switch (entry.State)
             {
                 case EntityState.Added:
-                    entry.Entity.CreatedAt = DateTime.UtcNow;
+                    if (entry.Entity.CreatedAt == default)
+                    {
+                        entry.Entity.CreatedAt = DateTime.UtcNow;
+                    }
                     break;
                 case EntityState.Modified:
                     entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    Entry(entry.Entity).Property(x => x.CreatedAt).IsModified = false;
                     break;
             }
         }
