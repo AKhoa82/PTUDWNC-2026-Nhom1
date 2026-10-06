@@ -15,8 +15,10 @@ public static class AuthEndpoints
     public static IEndpointRouteBuilder MapAuthEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/api/auth/register", Register);
-        endpoints.MapPost("/api/auth/login", Login);
+        var group = endpoints.MapGroup("/api/v1/auth");
+
+        group.MapPost("/register", Register).WithSummary("FR-AUTH-001: Đăng ký tài khoản");
+        group.MapPost("/login", Login).WithSummary("FR-AUTH-002: Đăng nhập");
 
         return endpoints;
     }
@@ -32,11 +34,7 @@ public static class AuthEndpoints
                 new LoginCommand(request),
                 cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng nhập thành công.",
-                user = response
-            });
+            return Results.Ok(response);
         }
         catch (AccountLockedException)
         {
@@ -46,18 +44,12 @@ public static class AuthEndpoints
         {
             return Results.ValidationProblem(ex.Errors
                 .GroupBy(error => error.PropertyName)
-                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()));
+                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
         }
         catch (UnauthorizedAccessException)
         {
             return Results.Unauthorized();
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.Problem(
-                title: "Database unavailable",
-                detail: "Không thể kết nối đến cơ sở dữ liệu. Vui lòng thử lại sau.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
 
@@ -68,17 +60,20 @@ public static class AuthEndpoints
     {
         try
         {
-            var userId = await mediator.Send(
+            var response = await mediator.Send(
                 new RegisterCommand(request),
                 cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng ký thành công.",
-                userId
-            });
+            return Results.Created(string.Empty, response);
         }
-        catch (InvalidOperationException ex)
+        catch (ValidationException ex)
+        {
+            return Results.ValidationProblem(ex.Errors
+                .GroupBy(error => error.PropertyName)
+                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        catch (CulinaryBlog.Application.Common.Exceptions.ConflictException ex)
         {
             return Results.Conflict(new
             {
