@@ -27,25 +27,10 @@ public static class RecipeEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            try
-            {
                 var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new PublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 return Results.Ok(result);
-            }
-            catch (DomainException ex)
-            {
-                return Results.UnprocessableEntity(new { message = ex.Message });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Problem(statusCode: 403, detail: ex.Message);
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new { message = ex.Message });
-            }
         })
         .WithName("PublishRecipe")
         .WithSummary("Xuất bản công thức nấu ăn")
@@ -64,25 +49,10 @@ public static class RecipeEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            try
-            {
                 var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new UnpublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 return Results.Ok(result);
-            }
-            catch (DomainException ex)
-            {
-                return Results.UnprocessableEntity(new { message = ex.Message });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Problem(statusCode: 403, detail: ex.Message);
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new { message = ex.Message });
-            }
         })
         .WithName("UnpublishRecipe")
         .WithSummary("Hủy xuất bản công thức nấu ăn")
@@ -100,25 +70,10 @@ public static class RecipeEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            try
-            {
                 var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, isAdmin), ct);
                 return Results.Ok(result);
-            }
-            catch (DomainException ex)
-            {
-                return Results.UnprocessableEntity(new { message = ex.Message });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Problem(statusCode: 403, detail: ex.Message);
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new { message = ex.Message });
-            }
         })
         .WithName("ArchiveRecipe")
         .WithSummary("Lưu trữ công thức nấu ăn")
@@ -140,13 +95,11 @@ public static class RecipeEndpoints
 
             if (string.IsNullOrWhiteSpace(currentUserId))
             {
-                return Results.Forbid();
+                throw new UnauthorizedAccessException("Token không có user ID.");
             }
 
             var isAdmin = user.IsInRole("Admin");
 
-            try
-            {
                 await sender.Send(
                     new DeleteRecipeCommand(
                         id,
@@ -155,18 +108,6 @@ public static class RecipeEndpoints
                     cancellationToken);
 
                 return Results.NoContent();
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new
-                {
-                    message = ex.Message
-                });
-            }
         })
         .WithName("DeleteRecipe")
         .WithSummary("FR-RCP-007 - Xóa công thức")

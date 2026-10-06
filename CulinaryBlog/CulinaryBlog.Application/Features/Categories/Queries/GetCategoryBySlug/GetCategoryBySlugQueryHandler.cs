@@ -22,7 +22,7 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
 
         if (category is null)
         {
-            return null;
+            throw new CulinaryBlog.Application.Common.Exceptions.NotFoundException($"Không tìm thấy danh mục với slug: {request.Slug}");
         }
 
         return new CategoryDetailDto

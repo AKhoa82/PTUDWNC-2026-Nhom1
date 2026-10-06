@@ -36,6 +36,14 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         // Validation is owned by the MediatR ValidationBehavior.
         // Normalize once so ordering and cache identity have identical semantics.
         request = request with { Sort = NormalizeSort(request.Sort) };
+        // Parse raw difficulty string into enum if provided and valid.
+        var difficulty = request.Difficulty;
+        if (!string.IsNullOrWhiteSpace(request.DifficultyRaw))
+        {
+            if (Enum.TryParse<CulinaryBlog.Domain.Entities.RecipeDifficulty>(request.DifficultyRaw, true, out var diffEnum))
+                difficulty = diffEnum;
+        }
+        request = request with { Difficulty = difficulty };
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
         var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
         shouldCache &= version is not null;

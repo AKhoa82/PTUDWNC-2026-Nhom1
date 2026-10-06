@@ -28,29 +28,11 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var response = await mediator.Send(
-                new LoginCommand(request),
-                cancellationToken);
+        var response = await mediator.Send(
+            new LoginCommand(request),
+            cancellationToken);
 
-            return Results.Ok(response);
-        }
-        catch (AccountLockedException)
-        {
-            return Results.StatusCode(StatusCodes.Status423Locked);
-        }
-        catch (ValidationException ex)
-        {
-            return Results.ValidationProblem(ex.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()),
-                statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Results.Unauthorized();
-        }
+        return Results.Ok(response);
     }
 
     private static async Task<IResult> Register(
@@ -58,35 +40,10 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var response = await mediator.Send(
-                new RegisterCommand(request),
-                cancellationToken);
+        var response = await mediator.Send(
+            new RegisterCommand(request),
+            cancellationToken);
 
-            return Results.Created(string.Empty, response);
-        }
-        catch (ValidationException ex)
-        {
-            return Results.ValidationProblem(ex.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()),
-                statusCode: StatusCodes.Status422UnprocessableEntity);
-        }
-        catch (CulinaryBlog.Application.Common.Exceptions.ConflictException ex)
-        {
-            return Results.Conflict(new
-            {
-                message = ex.Message
-            });
-        }
-        catch (DbUpdateException ex) when (
-            ex.InnerException is PostgresException { SqlState: "23505" })
-        {
-            return Results.Conflict(new
-            {
-                message = "Email hoặc tên định danh đã được sử dụng."
-            });
-        }
+        return Results.Created(string.Empty, response);
     }
 }
