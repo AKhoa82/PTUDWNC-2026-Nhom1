@@ -27,6 +27,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
         modelBuilder.Entity<User>(user =>
         {
             user.Property(entity => entity.UserName).HasColumnName("Username");
+            user.Property(entity => entity.AvatarUrl).HasMaxLength(500);
             user.HasIndex(entity => entity.Email).IsUnique();
             user.HasIndex(entity => entity.UserName).IsUnique();
         });

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AuthSessionProvider } from "@/components/auth-session-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className="min-h-screen w-full bg-[#f5f0e6] font-sans selection:bg-[#c6a15b]/25 selection:text-[#022c24]">
-        {children}
+        <AuthSessionProvider>{children}</AuthSessionProvider>
       </body>
     </html>
   );
