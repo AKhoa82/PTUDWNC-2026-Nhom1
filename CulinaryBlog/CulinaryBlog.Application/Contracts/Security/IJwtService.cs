@@ -6,4 +6,5 @@ public interface IJwtService
 {
     string GenerateAccessToken(User user, IEnumerable<string>? roles = null);
     string GenerateRefreshToken();
+    string HashRefreshToken(string refreshToken);
 }
