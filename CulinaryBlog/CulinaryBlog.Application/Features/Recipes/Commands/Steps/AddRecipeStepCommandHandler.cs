@@ -27,7 +27,7 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
             throw new InvalidOperationException("Recipe không tồn tại.");
         }
 
-        var isOwner = recipe.AuthorId == request.AuthorId;
+        var isOwner = Guid.TryParse(request.AuthorId, out var parsedUserId) && recipe.AuthorId == parsedUserId;
 
         if (!isOwner && !request.IsAdmin)
         {

@@ -27,7 +27,9 @@ public class UpdateIngredientCommandHandler : IRequestHandler<UpdateIngredientCo
             throw new InvalidOperationException("Recipe không tồn tại."); // Should be a custom NotFoundException
         }
 
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
             throw new UnauthorizedAccessException("Bạn không có quyền sửa công thức này.");
         }

@@ -36,12 +36,12 @@ public class Recipe : ConcurrentEntity
     public Guid CategoryId { get; set; }
     public Category Category { get; set; } = null!;
 
-    public string? AuthorId { get; set; }
+    public Guid AuthorId { get; set; }
+    public User Author { get; set; } = null!;
 
     public DateTime? PublishedAt { get; set; }
 
     public RecipeNutrition? Nutrition { get; set; }
-
 
 
     public ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();

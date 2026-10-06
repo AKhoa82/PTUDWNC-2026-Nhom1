@@ -204,7 +204,7 @@ public sealed class RecipeImageService(
         var recipe = await db.Recipes.Include(item => item.Images).ThenInclude(image => image.StoredFile)
             .SingleOrDefaultAsync(item => item.Id == recipeId, ct)
             ?? throw new KeyNotFoundException("Không tìm thấy công thức.");
-        if (!isAdmin && (!Guid.TryParse(recipe.AuthorId, out var ownerId) || ownerId != actorId))
+        if (!isAdmin && recipe.AuthorId != actorId)
             throw new UnauthorizedAccessException("Bạn không có quyền quản lý ảnh của công thức này.");
         return recipe;
     }

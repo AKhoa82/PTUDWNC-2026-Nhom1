@@ -32,7 +32,9 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
         }
 
         // Kiểm tra quyền (Resource-Based Authorization)
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
             throw new UnauthorizedAccessException("Bạn không có quyền chỉnh sửa công thức này.");
         }

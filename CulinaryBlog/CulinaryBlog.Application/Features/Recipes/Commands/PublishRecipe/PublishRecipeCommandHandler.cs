@@ -27,7 +27,9 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
             ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
 
         // 2. Kiểm tra quyền Resource-Based Authorization (chỉ Owner hoặc Admin mới được publish)
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
             throw new UnauthorizedAccessException("Bạn không có quyền xuất bản công thức này.");
         }

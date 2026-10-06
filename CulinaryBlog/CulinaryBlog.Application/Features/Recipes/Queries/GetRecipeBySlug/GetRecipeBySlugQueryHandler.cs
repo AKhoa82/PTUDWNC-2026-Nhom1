@@ -32,9 +32,12 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
 
         if (recipe.Status != RecipeStatus.Published)
         {
-            if (!request.IsAdmin && recipe.AuthorId != request.CurrentUserId)
+            if (!request.IsAdmin)
             {
-                throw new UnauthorizedAccessException("Không có quyền xem công thức chưa xuất bản.");
+                if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId) || recipe.AuthorId != parsedUserId)
+                {
+                    throw new UnauthorizedAccessException("Không có quyền xem công thức chưa xuất bản.");
+                }
             }
         }
 

@@ -68,9 +68,10 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         {
             if (!string.IsNullOrEmpty(request.CurrentUserId))
             {
+                var isParsed = Guid.TryParse(request.CurrentUserId, out var parsedCurrentUserId);
                 query = query.Where(r =>
                     r.Status == RecipeStatus.Published ||
-                    (r.Status != RecipeStatus.Published && r.AuthorId == request.CurrentUserId));
+                    (r.Status != RecipeStatus.Published && isParsed && r.AuthorId == parsedCurrentUserId));
             }
             else
             {
@@ -135,7 +136,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
                 Status             = r.Status.ToString(),
                 CategoryId         = r.CategoryId,
                 CategoryName       = r.Category.Name,
-                AuthorId           = r.AuthorId,
+                AuthorId = r.AuthorId,
                 CreatedAt          = r.CreatedAt,
                 UpdatedAt          = r.UpdatedAt,
                 PublishedAt        = r.PublishedAt

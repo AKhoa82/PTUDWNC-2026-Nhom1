@@ -23,7 +23,9 @@ public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeComm
             .FirstOrDefaultAsync(r => r.Id == request.Id, ct)
             ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
 
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
             throw new UnauthorizedAccessException("Bạn không có quyền hủy xuất bản công thức này.");
         }

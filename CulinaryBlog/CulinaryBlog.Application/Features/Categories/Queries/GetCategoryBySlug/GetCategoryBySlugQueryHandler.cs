@@ -45,7 +45,7 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
                 Status             = r.Status.ToString(),
                 CategoryId         = r.CategoryId,
                 CategoryName       = category.Name,
-                AuthorId           = r.AuthorId,
+                AuthorId = r.AuthorId,
                 CreatedAt          = r.CreatedAt,
                 UpdatedAt          = r.UpdatedAt,
                 PublishedAt        = r.PublishedAt

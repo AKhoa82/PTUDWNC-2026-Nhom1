@@ -23,7 +23,9 @@ public class ArchiveRecipeCommandHandler : IRequestHandler<ArchiveRecipeCommand,
         var recipe = await _context.Recipes.FirstOrDefaultAsync(r => r.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
 
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
             throw new UnauthorizedAccessException("Bạn không có quyền lưu trữ công thức này.");
         }
