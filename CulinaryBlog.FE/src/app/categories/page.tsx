@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useState } from 'react';
+import { authenticatedFetch } from '@/lib/auth-client';
 
 interface Category {
   id: string;
@@ -16,17 +17,13 @@ export default function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('http://localhost:5018/api/categories')
-      .then((res) => {
-        if (!res.ok) throw new Error('Không thể tải danh sách danh mục');
-        return res.json();
-      })
-      .then((data: Category[]) => {
+    authenticatedFetch<Category[]>('/categories')
+      .then((data) => {
         setCategories(data);
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : 'Không thể tải danh sách danh mục');
         setLoading(false);
       });
   }, []);

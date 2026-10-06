@@ -50,7 +50,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResponseDto
         var refreshToken = _jwtService.GenerateRefreshToken();
         _context.RefreshTokens.Add(new RefreshToken
         {
-            Id = Guid.NewGuid(), UserId = user.Id, Token = refreshToken,
+            Id = Guid.NewGuid(), UserId = user.Id, Token = _jwtService.HashRefreshToken(refreshToken),
             ExpiresAt = now.AddDays(7)
         });
         await _context.SaveChangesAsync(cancellationToken);

@@ -32,6 +32,9 @@ public sealed class JwtService(IConfiguration configuration) : IJwtService
 
     public string GenerateRefreshToken() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 
+    public string HashRefreshToken(string refreshToken) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken)));
+
     private SymmetricSecurityKey GetKey() => new(Encoding.UTF8.GetBytes(
         _configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is missing.")));
 }

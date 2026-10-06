@@ -129,11 +129,16 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
             user.HasIndex(entity => entity.UserName).IsUnique();
         });
 
-        modelBuilder.Entity<RefreshToken>().HasIndex(token => token.Token).IsUnique();
-        modelBuilder.Entity<RefreshToken>()
-            .HasOne(token => token.User)
-            .WithMany()
-            .HasForeignKey(token => token.UserId);
+        modelBuilder.Entity<RefreshToken>(refreshToken =>
+        {
+            refreshToken.HasIndex(token => token.Token).IsUnique();
+            refreshToken.Property(token => token.RevokedAt).IsConcurrencyToken();
+            refreshToken.Property(token => token.ReplacedByTokenHash).HasMaxLength(64);
+            refreshToken.Property(token => token.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            refreshToken.HasOne(token => token.User)
+                .WithMany()
+                .HasForeignKey(token => token.UserId);
+        });
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }
