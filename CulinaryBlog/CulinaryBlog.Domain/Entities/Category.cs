@@ -25,6 +25,5 @@ public class Category : AuditableEntity
         Name = name;
         Slug = slug;
         Description = description;
-        UpdatedAt = DateTime.UtcNow;
     }
 }

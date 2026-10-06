@@ -52,7 +52,6 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             Status = RecipeStatus.Draft, // Mặc định khi mới tạo là Draft
             CategoryId = request.Request.CategoryId,
             AuthorId = actorId.ToString(),
-            CreatedAt = DateTime.UtcNow,
 
             // MAP DANH SÁCH NGUYÊN LIỆU
             Ingredients = request.Request.Ingredients.Select(i => RecipeIngredient.Create(

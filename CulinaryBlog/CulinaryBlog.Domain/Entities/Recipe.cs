@@ -19,7 +19,7 @@ public enum RecipeDifficulty
     Expert = 4
 }
 
-public class Recipe : AuditableEntity
+public class Recipe : ConcurrentEntity
 {
     public string Title { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
@@ -42,10 +42,7 @@ public class Recipe : AuditableEntity
 
     public RecipeNutrition? Nutrition { get; set; }
 
-    [Timestamp]
-    public byte[]? RowVersion { get; set; }
 
-    public bool IsDeleted { get; set; }
 
     public ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
@@ -69,7 +66,6 @@ public class Recipe : AuditableEntity
         Servings = servings;
         Difficulty = difficulty;
         Instructions = instructions;
-        UpdatedAt = DateTime.UtcNow;
         // Slug không cập nhật để giữ nguyên URL (tốt cho SEO)
     }
 
@@ -96,13 +92,11 @@ public class Recipe : AuditableEntity
 
         Status = RecipeStatus.Published;
         PublishedAt = DateTime.UtcNow;
-        UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unpublish()
     {
         Status = RecipeStatus.Draft;
-        UpdatedAt = DateTime.UtcNow;
     }
 
     public void Archive() 
@@ -111,7 +105,6 @@ public class Recipe : AuditableEntity
             return;
 
         Status = RecipeStatus.Archived;
-        UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive() 
@@ -120,7 +113,6 @@ public class Recipe : AuditableEntity
             return;
 
         Status = RecipeStatus.Draft;
-        UpdatedAt = DateTime.UtcNow;
     }
 
     public void SoftDelete() 
@@ -129,6 +121,5 @@ public class Recipe : AuditableEntity
             return;
 
         IsDeleted = true;
-        UpdatedAt = DateTime.UtcNow;
     }
 }

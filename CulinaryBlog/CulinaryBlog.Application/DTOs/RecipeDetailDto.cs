@@ -23,4 +23,6 @@ public class RecipeDetailDto
     public List<IngredientDto> Ingredients { get; set; } = new();
     public List<RecipeStepDto> Steps { get; set; } = new();
     public List<RecipeImageDto> Images { get; set; } = new();
+    
+    public string RowVersion { get; set; } = string.Empty;
 }

@@ -40,6 +40,8 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
         await _context.SaveChangesAsync(ct);
 
         // 5. Trả về DTO
-        return recipe.Adapt<RecipeDetailDto>();
+        var result = recipe.Adapt<RecipeDetailDto>();
+        result.RowVersion = recipe.RowVersion.ToString();
+        return result;
     }
 }

@@ -57,6 +57,7 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             CreatedAt = recipe.CreatedAt,
             UpdatedAt = recipe.UpdatedAt,
             PublishedAt = recipe.PublishedAt,
+            RowVersion = recipe.RowVersion.ToString(),
 
             Ingredients = recipe.Ingredients
                 .OrderBy(i => i.SortOrder)
