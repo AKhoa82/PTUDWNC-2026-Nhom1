@@ -27,14 +27,17 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
 
         if (recipe is null)
         {
-            return null;
+            throw new CulinaryBlog.Application.Common.Exceptions.NotFoundException("Không tìm thấy công thức này.");
         }
 
         if (recipe.Status != RecipeStatus.Published)
         {
-            if (!request.IsAdmin && recipe.AuthorId != request.CurrentUserId)
+            if (!request.IsAdmin)
             {
-                throw new UnauthorizedAccessException("Không có quyền xem công thức chưa xuất bản.");
+                if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId) || recipe.AuthorId != parsedUserId)
+                {
+                    throw new CulinaryBlog.Application.Common.Exceptions.ForbiddenException("Không có quyền xem công thức chưa xuất bản.");
+                }
             }
         }
 

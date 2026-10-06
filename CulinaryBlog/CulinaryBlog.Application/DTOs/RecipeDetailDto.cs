@@ -15,7 +15,7 @@ public class RecipeDetailDto
     public string Status { get; set; } = string.Empty;
     public Guid CategoryId { get; set; }
     public string CategoryName { get; set; } = string.Empty;
-    public string? AuthorId { get; set; }
+    public Guid AuthorId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }

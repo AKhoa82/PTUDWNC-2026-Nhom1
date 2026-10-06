@@ -32,19 +32,32 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
         }
 
         // Kiểm tra quyền (Resource-Based Authorization)
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền chỉnh sửa công thức này.");
+            throw new ForbiddenException("Bạn không có quyền chỉnh sửa công thức này.");
         }
 
         // Kiểm tra danh mục
         if (!await _context.Categories.AnyAsync(c => c.Id == request.Request.CategoryId, cancellationToken))
         {
-            throw new NotFoundException($"Danh mục {request.Request.CategoryId} không tồn tại.");
+            throw new FluentValidation.ValidationException(new[] {
+                new FluentValidation.Results.ValidationFailure(
+                    "CategoryId",
+                    "Danh mục không tồn tại.")
+            });
         }
 
         // Gán OriginalValue cho RowVersion để EF Core phát hiện thay đổi đồng thời
-        uint clientRowVersion = uint.Parse(request.Request.RowVersion);
+        if (!uint.TryParse(request.Request.RowVersion, out var clientRowVersion))
+        {
+            throw new FluentValidation.ValidationException(new[] {
+                new FluentValidation.Results.ValidationFailure(
+                    "RowVersion",
+                    "RowVersion không hợp lệ.")
+            });
+        }
         _context.Recipes.Entry(recipe).Property(r => r.RowVersion).OriginalValue = clientRowVersion;
 
         recipe.Update(

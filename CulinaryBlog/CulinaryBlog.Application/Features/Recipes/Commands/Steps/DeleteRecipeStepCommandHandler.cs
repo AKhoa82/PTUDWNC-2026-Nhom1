@@ -1,6 +1,7 @@
 using MediatR;
 using CulinaryBlog.Application.Contracts.Persistence;
 using Microsoft.EntityFrameworkCore;
+using CulinaryBlog.Application.Common.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Steps;
 
@@ -22,20 +23,20 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
 
         if (recipe == null)
         {
-            throw new InvalidOperationException("Recipe không tồn tại.");
+            throw new NotFoundException("Recipe không tồn tại.");
         }
 
-        var isOwner = recipe.AuthorId == request.AuthorId;
+        var isOwner = Guid.TryParse(request.AuthorId, out var parsedUserId) && recipe.AuthorId == parsedUserId;
 
         if (!isOwner && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền xoá bước thực hiện của công thức này.");
+            throw new ForbiddenException("Bạn không có quyền xoá bước thực hiện của công thức này.");
         }
 
         var stepToRemove = recipe.Steps.FirstOrDefault(s => s.Id == request.StepId);
         if (stepToRemove == null)
         {
-            throw new InvalidOperationException("Bước thực hiện không tồn tại.");
+            throw new NotFoundException("Bước thực hiện không tồn tại.");
         }
 
         int deletedStepNumber = stepToRemove.StepNumber;
@@ -48,11 +49,50 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
             .OrderBy(s => s.StepNumber)
             .ToList();
 
-        foreach (var step in remainingSteps)
+        if (remainingSteps.Count == 0)
         {
-            step.StepNumber -= 1;
+            await _context.SaveChangesAsync(cancellationToken);
+            return;
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        var maxStepNumber = recipe.Steps.Max(s => s.StepNumber);
+        var offset = maxStepNumber + 1;
+
+        if (_context is DbContext dbContext)
+        {
+            using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                // Phase 1: Shift to a safe high range to avoid UNIQUE constraint conflicts
+                foreach (var step in remainingSteps)
+                {
+                    step.StepNumber += offset;
+                }
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                // Phase 2: Shift back to correct numbers
+                foreach (var step in remainingSteps)
+                {
+                    step.StepNumber -= (offset + 1);
+                }
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+        else
+        {
+            // Fallback for non-EF environments (e.g. mock testing)
+            foreach (var step in remainingSteps) step.StepNumber += offset;
+            await _context.SaveChangesAsync(cancellationToken);
+            
+            foreach (var step in remainingSteps) step.StepNumber -= (offset + 1);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
     }
 }

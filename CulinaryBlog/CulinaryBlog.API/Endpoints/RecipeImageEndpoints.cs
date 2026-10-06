@@ -67,14 +67,11 @@ public static class RecipeImageEndpoints
             .WithTags("Recipe Images").RequireAuthorization();
         group.AddEndpointFilter(async (context, next) =>
         {
-            try { return await next(context); }
-            catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
-            catch (RecipeImageValidationException ex)
+            try
             {
-                return Results.Problem(statusCode: 422, title: "Dữ liệu ảnh không hợp lệ.", detail: ex.Message);
+                return await next(context);
             }
-            catch (KeyNotFoundException) { return Results.NotFound(); }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+
             catch (Exception ex) when (ex is MinioException or HttpRequestException or FileOperationUnavailableException ||
                 (ex is OperationCanceledException && !context.HttpContext.RequestAborted.IsCancellationRequested))
             {
@@ -82,11 +79,12 @@ public static class RecipeImageEndpoints
                     .CreateLogger("RecipeImageEndpoints").LogError(ex, "Recipe image storage operation failed");
                 return Results.Problem(statusCode: 503, title: "Dịch vụ lưu trữ tạm thời không khả dụng.");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
+                // Log unexpected errors; let GlobalExceptionHandler handle them
                 context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
-                    .CreateLogger("RecipeImageEndpoints").LogError(ex, "Recipe image operation failed");
-                return Results.Problem(statusCode: 500, title: "Không thể hoàn tất thao tác ảnh.");
+                    .CreateLogger("RecipeImageEndpoints").LogError(ex, "Unexpected error in RecipeImageEndpoints");
+                throw;
             }
         });
 

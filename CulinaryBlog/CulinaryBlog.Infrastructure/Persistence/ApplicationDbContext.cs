@@ -129,7 +129,6 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
             user.HasIndex(entity => entity.UserName).IsUnique();
         });
 
-        modelBuilder.Entity<RefreshToken>().HasIndex(token => token.Token).IsUnique();
         modelBuilder.Entity<RefreshToken>()
             .HasOne(token => token.User)
             .WithMany()

@@ -23,14 +23,14 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             !await _context.Users.AnyAsync(x => x.Id == actorId, cancellationToken))
             throw new UnauthorizedAccessException("A valid authenticated author is required.");
         if (request.Request.ImageUrl?.Length > 500)
-            throw new ArgumentException("ImageUrl cannot exceed 500 characters.");
+            throw new FluentValidation.ValidationException(new[] { new FluentValidation.Results.ValidationFailure("ImageUrl", "ImageUrl cannot exceed 500 characters.") });
         // 1. Kiểm tra Category có tồn tại không
         var categoryExists = await _context.Categories
             .AnyAsync(c => c.Id == request.Request.CategoryId, cancellationToken);
 
         if (!categoryExists)
         {
-            throw new InvalidOperationException("Danh mục không tồn tại.");
+            throw new FluentValidation.ValidationException(new[] { new FluentValidation.Results.ValidationFailure("CategoryId", "Danh mục không tồn tại.") });
         }
 
         // 2. Tạo Slug độc nhất
@@ -51,7 +51,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             Instructions = request.Request.Instructions,
             Status = RecipeStatus.Draft, // Mặc định khi mới tạo là Draft
             CategoryId = request.Request.CategoryId,
-            AuthorId = actorId.ToString(),
+            AuthorId = actorId,
 
             // MAP DANH SÁCH NGUYÊN LIỆU
             Ingredients = request.Request.Ingredients.Select(i => RecipeIngredient.Create(

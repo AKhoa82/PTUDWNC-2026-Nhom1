@@ -36,6 +36,14 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         // Validation is owned by the MediatR ValidationBehavior.
         // Normalize once so ordering and cache identity have identical semantics.
         request = request with { Sort = NormalizeSort(request.Sort) };
+        // Parse raw difficulty string into enum if provided and valid.
+        var difficulty = request.Difficulty;
+        if (!string.IsNullOrWhiteSpace(request.DifficultyRaw))
+        {
+            if (Enum.TryParse<CulinaryBlog.Domain.Entities.RecipeDifficulty>(request.DifficultyRaw, true, out var diffEnum))
+                difficulty = diffEnum;
+        }
+        request = request with { Difficulty = difficulty };
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
         var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
         shouldCache &= version is not null;
@@ -68,9 +76,10 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         {
             if (!string.IsNullOrEmpty(request.CurrentUserId))
             {
+                var isParsed = Guid.TryParse(request.CurrentUserId, out var parsedCurrentUserId);
                 query = query.Where(r =>
                     r.Status == RecipeStatus.Published ||
-                    (r.Status != RecipeStatus.Published && r.AuthorId == request.CurrentUserId));
+                    (r.Status != RecipeStatus.Published && isParsed && r.AuthorId == parsedCurrentUserId));
             }
             else
             {
@@ -135,7 +144,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
                 Status             = r.Status.ToString(),
                 CategoryId         = r.CategoryId,
                 CategoryName       = r.Category.Name,
-                AuthorId           = r.AuthorId,
+                AuthorId = r.AuthorId,
                 CreatedAt          = r.CreatedAt,
                 UpdatedAt          = r.UpdatedAt,
                 PublishedAt        = r.PublishedAt

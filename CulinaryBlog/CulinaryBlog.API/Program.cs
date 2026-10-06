@@ -105,6 +105,7 @@ builder.Services.AddValidatorsFromAssembly(typeof(RegisterCommand).Assembly);
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly);
+    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
     cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 });
 
@@ -124,6 +125,9 @@ builder.Services.AddOutputCache(options =>
         builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
 });
 builder.Services.AddInfrastructureServices(builder.Configuration);
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi(options =>
@@ -166,6 +170,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.UseAuthentication();
@@ -199,16 +204,13 @@ app.MapGet("/api/v1/categories", async (
 .WithSummary("Lấy danh sách danh mục (CQRS + Redis Cache, TTL 60 phút)")
 .AllowAnonymous();
 
-app.MapGet("/api/categories/{slug}", async (
+app.MapGet("/api/v1/categories/{slug}", async (
     string slug,
     IMediator mediator,
     CancellationToken cancellationToken) =>
 {
     var result = await mediator.Send(new GetCategoryBySlugQuery(slug), cancellationToken);
-
-    return result is not null
-        ? Results.Ok(result)
-        : Results.NotFound(new { message = $"Không tìm thấy danh mục với slug: '{slug}'" });
+    return Results.Ok(result);
 })
 .WithName("GetCategoryBySlug")
 .WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
@@ -227,20 +229,8 @@ app.MapGet("/api/v1/recipes", async (
     int? minServings = null,
     string sort = "-createdAt") =>
 {
-    RecipeDifficulty? parsedDifficulty = null;
-    if (!string.IsNullOrEmpty(difficulty))
-    {
-        if (difficulty.Contains(',') || !Enum.TryParse<RecipeDifficulty>(difficulty, ignoreCase: true, out var diffEnum) || !Enum.IsDefined(diffEnum))
-        {
-            return Results.ValidationProblem(
-                new Dictionary<string, string[]>
-                {
-                    [nameof(GetRecipesQuery.Difficulty)] = ["difficulty phải là một trong: Easy, Medium, Hard, Expert."]
-                },
-                statusCode: 422);
-        }
-        parsedDifficulty = diffEnum;
-    }
+
+        // Difficulty validation moved to GetRecipesQueryValidator; raw value handled in handler.
 
     string? currentUserId = null;
     bool isAdmin = false;
@@ -256,7 +246,7 @@ app.MapGet("/api/v1/recipes", async (
         PageSize: pageSize,
         Keyword: keyword?.Trim(),
         CategoryId: categoryId,
-        Difficulty: parsedDifficulty,
+        DifficultyRaw: difficulty,
         MaxCookTime: maxCookTime,
         MinServings: minServings,
         Sort: sort,
@@ -264,17 +254,8 @@ app.MapGet("/api/v1/recipes", async (
         IsAdmin: isAdmin
     );
 
-    try
-    {
-        var result = await mediator.Send(query, cancellationToken);
-        return Results.Ok(result);
-    }
-    catch (FluentValidation.ValidationException exception)
-    {
-        var errors = exception.Errors.GroupBy(error => error.PropertyName)
-            .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray());
-        return Results.ValidationProblem(errors, statusCode: 422);
-    }
+    var result = await mediator.Send(query, cancellationToken);
+    return Results.Ok(result);
 })
 .WithName("GetRecipesV1")
 .WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt. Giá trị rỗng hoặc không hỗ trợ dùng mặc định. Sắp xếp trước phân trang, dùng Id tăng dần khi trùng giá trị.")
@@ -285,18 +266,9 @@ app.MapGet("/api/v1/recipes/search", async (
     IMediator mediator, CancellationToken cancellationToken,
     string? q = null, int page = 1, int pageSize = 12) =>
 {
-    try
-    {
-        return Results.Ok(await mediator.Send(
-            new CulinaryBlog.Application.Features.Recipes.SearchRecipes.SearchRecipesQuery(q, page, pageSize),
-            cancellationToken));
-    }
-    catch (FluentValidation.ValidationException exception)
-    {
-        return Results.ValidationProblem(exception.Errors.GroupBy(error => error.PropertyName)
-            .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()),
-            statusCode: 422);
-    }
+    return Results.Ok(await mediator.Send(
+        new CulinaryBlog.Application.Features.Recipes.SearchRecipes.SearchRecipesQuery(q, page, pageSize),
+        cancellationToken));
 })
 .WithName("SearchRecipesV1")
 .WithSummary("FR-SRCH-001 – Tìm kiếm toàn văn, không dấu, tiền tố; xếp hạng độ liên quan.")
@@ -308,26 +280,17 @@ app.MapGet("/api/v1/recipes/{slug}", async (
     System.Security.Claims.ClaimsPrincipal user,
     CancellationToken cancellationToken) =>
 {
-    try
+    string? currentUserId = null;
+    bool isAdmin = false;
+    if (user?.Identity?.IsAuthenticated == true)
     {
-        string? currentUserId = null;
-        bool isAdmin = false;
-        if (user?.Identity?.IsAuthenticated == true)
-        {
-            currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            isAdmin = user.IsInRole("Admin");
-        }
-
-        var result = await mediator.Send(new GetRecipeBySlugQuery(slug, currentUserId, isAdmin), cancellationToken);
-
-        return result is not null 
-            ? Results.Ok(result) 
-            : Results.NotFound(new { message = "Không tìm thấy công thức này." });
+        currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        isAdmin = user.IsInRole("Admin");
     }
-    catch (UnauthorizedAccessException ex)
-    {
-        return Results.Problem(statusCode: 403, detail: ex.Message);
-    }
+
+    var result = await mediator.Send(new GetRecipeBySlugQuery(slug, currentUserId, isAdmin), cancellationToken);
+
+    return Results.Ok(result);
 })
 .WithName("GetRecipeBySlugV1")
 .WithSummary("FR-RCP-002 – Xem chi tiết công thức")
@@ -341,60 +304,28 @@ app.MapPost("/api/v1/recipes", async (
     RecipeImageCacheInvalidator cacheStore,
     CancellationToken cancellationToken) =>
 {
-    var validationResults = new List<ValidationResult>();
-    var validationContext = new ValidationContext(request);
-
-    if (!Validator.TryValidateObject(
-        request,
-        validationContext,
-        validationResults,
-        validateAllProperties: true))
-    {
-        var errors = validationResults
-            .GroupBy(
-                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-            
-        return Results.ValidationProblem(errors, statusCode: 422);
-    }
+    // Validation handled by CreateRecipeCommandValidator (FluentValidation)
     
-    try
+    string? authorId = null;
+    if (user?.Identity?.IsAuthenticated == true)
     {
-        string? authorId = null;
-        if (user?.Identity?.IsAuthenticated == true)
-        {
-            authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        }
-
-        var recipeId = await mediator.Send(
-            new CreateRecipeCommand(request, authorId),
-            cancellationToken);
-
-        await cacheStore.InvalidateAsync();
-
-        return Results.Created($"/api/v1/recipes/{recipeId}", new
-        {
-            message = "Tạo công thức thành công.",
-            id = recipeId
-        });
+        authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     }
-    catch (UnauthorizedAccessException) { return Results.Forbid(); }
-    catch (FluentValidation.ValidationException ex)
+
+    var recipeId = await mediator.Send(
+        new CreateRecipeCommand(request, authorId),
+        cancellationToken);
+
+    await cacheStore.InvalidateAsync();
+
+    return Results.Created($"/api/v1/recipes/{recipeId}", new
     {
-        return Results.ValidationProblem(ex.Errors.GroupBy(x => x.PropertyName)
-            .ToDictionary(group => group.Key, group => group.Select(x => x.ErrorMessage).ToArray()), statusCode: 422);
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { message = ex.Message });
-    }
+        message = "Tạo công thức thành công.",
+        id = recipeId
+    });
 })
 .WithName("CreateRecipeV1")
-.RequireAuthorization()
+.RequireAuthorization("AuthorPolicy")
 .WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
 
 app.MapPut("/api/v1/recipes/{id:guid}", async (
@@ -406,31 +337,20 @@ app.MapPut("/api/v1/recipes/{id:guid}", async (
     CancellationToken cancellationToken) =>
 {
     string? currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-    if (string.IsNullOrEmpty(currentUserId)) return Results.Forbid();
+    if (string.IsNullOrEmpty(currentUserId)) throw new UnauthorizedAccessException("Token không có user ID.");
     
     bool isAdmin = user.IsInRole("Admin");
 
-    try
-    {
-        var result = await mediator.Send(
-            new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin), 
-            cancellationToken);
+    var result = await mediator.Send(
+        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin), 
+        cancellationToken);
 
-        await cacheStore.InvalidateAsync();
+    await cacheStore.InvalidateAsync();
 
-        return Results.Ok(result);
-    }
-    catch (UnauthorizedAccessException) { return Results.Forbid(); }
-    catch (CulinaryBlog.Application.Common.Exceptions.NotFoundException ex) { return Results.NotFound(new { message = ex.Message }); }
-    catch (CulinaryBlog.Application.Common.Exceptions.ConflictException ex) { return Results.Conflict(new { message = ex.Message }); }
-    catch (FluentValidation.ValidationException ex)
-    {
-        return Results.ValidationProblem(ex.Errors.GroupBy(x => x.PropertyName)
-            .ToDictionary(group => group.Key, group => group.Select(x => x.ErrorMessage).ToArray()), statusCode: 422);
-    }
+    return Results.Ok(result);
 })
 .WithName("UpdateRecipeV1")
-.RequireAuthorization()
+.RequireAuthorization("AuthorPolicy")
 .WithSummary("FR-RCP-004 – Cập nhật công thức nấu ăn");
 
 using (var scope = app.Services.CreateScope())

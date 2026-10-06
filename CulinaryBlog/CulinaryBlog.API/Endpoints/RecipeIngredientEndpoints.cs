@@ -18,121 +18,76 @@ public static class RecipeIngredientEndpoints
 
         group.MapPost("/{id:guid}/ingredients", async (Guid id, AddIngredientRequest request, IMediator mediator, ClaimsPrincipal user) =>
         {
-            try
-            {
-                var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-                var isAdmin = user.IsInRole("Admin");
+            var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            var isAdmin = user.IsInRole("Admin");
 
-                if (currentUserId == null)
-                {
-                    return Results.Unauthorized();
-                }
+            if (currentUserId == null)
+            {
+                throw new UnauthorizedAccessException("Token không có user ID.");
+            }
 
-                var command = new AddIngredientCommand(
-                    id,
-                    request.Name,
-                    request.Quantity,
-                    request.Unit,
-                    request.Notes,
-                    request.SortOrder,
-                    currentUserId,
-                    isAdmin
-                );
+            var command = new AddIngredientCommand(
+                id,
+                request.Name,
+                request.Quantity,
+                request.Unit,
+                request.Notes,
+                request.SortOrder,
+                currentUserId,
+                isAdmin
+            );
 
-                var result = await mediator.Send(command);
-                return Results.Created($"/api/v1/recipes/{id}/ingredients/{result.Id}", result);
-            }
-            catch (DomainException ex)
-            {
-                return Results.UnprocessableEntity(new { message = ex.Message });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Problem(statusCode: 403, detail: ex.Message);
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new { message = ex.Message });
-            }
+            var result = await mediator.Send(command);
+            return Results.Created($"/api/v1/recipes/{id}/ingredients/{result.Id}", result);
         })
         .RequireAuthorization();
 
         group.MapPut("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, UpdateIngredientRequest request, IMediator mediator, ClaimsPrincipal user) =>
         {
-            try
-            {
-                var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-                var isAdmin = user.IsInRole("Admin");
+            var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            var isAdmin = user.IsInRole("Admin");
 
-                if (currentUserId == null)
-                {
-                    return Results.Unauthorized();
-                }
+            if (string.IsNullOrWhiteSpace(currentUserId))
+{
+    throw new UnauthorizedAccessException("Token không có user ID.");
+}
 
-                var command = new UpdateIngredientCommand(
-                    id,
-                    ingId,
-                    request.Name,
-                    request.Quantity,
-                    request.Unit,
-                    request.Notes,
-                    request.SortOrder,
-                    currentUserId,
-                    isAdmin
-                );
+            var command = new UpdateIngredientCommand(
+                id,
+                ingId,
+                request.Name,
+                request.Quantity,
+                request.Unit,
+                request.Notes,
+                request.SortOrder,
+                currentUserId,
+                isAdmin
+            );
 
-                var result = await mediator.Send(command);
-                return Results.Ok(result);
-            }
-            catch (DomainException ex)
-            {
-                return Results.UnprocessableEntity(new { message = ex.Message });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Problem(statusCode: 403, detail: ex.Message);
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new { message = ex.Message });
-            }
+            var result = await mediator.Send(command);
+            return Results.Ok(result);
         })
         .RequireAuthorization();
 
         group.MapDelete("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, IMediator mediator, ClaimsPrincipal user) =>
         {
-            try
-            {
-                var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-                var isAdmin = user.IsInRole("Admin");
+            var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+            var isAdmin = user.IsInRole("Admin");
 
-                if (currentUserId == null)
-                {
-                    return Results.Unauthorized();
-                }
+            if (currentUserId == null)
+            {
+                throw new UnauthorizedAccessException("Token không có user ID.");
+            }
 
-                var command = new DeleteIngredientCommand(
-                    id,
-                    ingId,
-                    currentUserId,
-                    isAdmin
-                );
+            var command = new DeleteIngredientCommand(
+                id,
+                ingId,
+                currentUserId,
+                isAdmin
+            );
 
-                await mediator.Send(command);
-                return Results.NoContent();
-            }
-            catch (DomainException ex)
-            {
-                return Results.UnprocessableEntity(new { message = ex.Message });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Problem(statusCode: 403, detail: ex.Message);
-            }
-            catch (NotFoundException ex)
-            {
-                return Results.NotFound(new { message = ex.Message });
-            }
+            await mediator.Send(command);
+            return Results.NoContent();
         })
         .RequireAuthorization();
     }
