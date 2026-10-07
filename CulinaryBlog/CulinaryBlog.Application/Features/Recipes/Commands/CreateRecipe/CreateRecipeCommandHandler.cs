@@ -4,6 +4,7 @@ using CulinaryBlog.Domain.Entities;
 using Mapster;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -87,8 +88,29 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         }
 
         _context.Recipes.Add(recipe);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
-        await _context.SaveChangesAsync(cancellationToken);
+        var cacheInvalidation = new RecipeCacheInvalidation { RecipeSlug = recipe.Slug };
+        _context.RecipeCacheInvalidations.Add(cacheInvalidation);
+
+        const int maxSaveAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                break;
+            }
+            catch (DbUpdateException exception) when (
+                attempt < maxSaveAttempts &&
+                exception.InnerException is PostgresException
+                {
+                    SqlState: "23505",
+                    ConstraintName: "IX_Recipes_Slug"
+                })
+            {
+                recipe.Slug = await GenerateUniqueSlugAsync(request.Request.Title, cancellationToken);
+                cacheInvalidation.RecipeSlug = recipe.Slug;
+            }
+        }
 
         var result = recipe.Adapt<RecipeDto>();
         result.RowVersion = recipe.RowVersion.ToString();
