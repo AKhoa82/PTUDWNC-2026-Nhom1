@@ -8,6 +8,7 @@ using System.Security.Claims;
 using CulinaryBlog.Application.Common.Exceptions;
 using CulinaryBlog.Domain.Exceptions;
 
+
 namespace CulinaryBlog.API.Endpoints;
 
 public static class RecipeIngredientEndpoints
@@ -16,7 +17,7 @@ public static class RecipeIngredientEndpoints
     {
         var group = app.MapGroup("/api/v1/recipes").WithTags("Recipe Ingredients");
 
-        group.MapPost("/{id:guid}/ingredients", async (Guid id, AddIngredientRequest request, IMediator mediator, ClaimsPrincipal user) =>
+        group.MapPost("/{id:guid}/ingredients", async (Guid id, AddIngredientRequest request, IMediator mediator, ClaimsPrincipal user, RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             var isAdmin = user.IsInRole("Admin");
@@ -37,12 +38,20 @@ public static class RecipeIngredientEndpoints
                 isAdmin
             );
 
-            var result = await mediator.Send(command);
+            var result = await mediator.Send(command, ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
             return Results.Created($"/api/v1/recipes/{id}/ingredients/{result.Id}", result);
         })
-        .RequireAuthorization();
+        .WithName("AddRecipeIngredient")
+        .WithSummary("Thêm nguyên liệu")
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<IngredientDto>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
-        group.MapPut("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, UpdateIngredientRequest request, IMediator mediator, ClaimsPrincipal user) =>
+        group.MapPut("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, UpdateIngredientRequest request, IMediator mediator, ClaimsPrincipal user, RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             var isAdmin = user.IsInRole("Admin");
@@ -64,12 +73,20 @@ public static class RecipeIngredientEndpoints
                 isAdmin
             );
 
-            var result = await mediator.Send(command);
+            var result = await mediator.Send(command, ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
             return Results.Ok(result);
         })
-        .RequireAuthorization();
+        .WithName("UpdateRecipeIngredient")
+        .WithSummary("Cập nhật nguyên liệu")
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<IngredientDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
-        group.MapDelete("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, IMediator mediator, ClaimsPrincipal user) =>
+        group.MapDelete("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, IMediator mediator, ClaimsPrincipal user, RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             var isAdmin = user.IsInRole("Admin");
@@ -86,10 +103,17 @@ public static class RecipeIngredientEndpoints
                 isAdmin
             );
 
-            await mediator.Send(command);
+            await mediator.Send(command, ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
             return Results.NoContent();
         })
-        .RequireAuthorization();
+        .WithName("DeleteRecipeIngredient")
+        .WithSummary("Xóa nguyên liệu")
+        .RequireAuthorization("AuthorPolicy")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
     }
 }
 

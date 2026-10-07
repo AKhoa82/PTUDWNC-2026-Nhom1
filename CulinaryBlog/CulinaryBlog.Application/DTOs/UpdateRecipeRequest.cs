@@ -13,18 +13,8 @@ public class UpdateRecipeRequest
     public RecipeDifficulty Difficulty { get; set; }
     public string Instructions { get; set; } = string.Empty;
     public Guid CategoryId { get; set; }
-    public UpdateRecipeNutritionDto? Nutrition { get; set; }
+    public RecipeNutritionDto? Nutrition { get; set; }
     
     [Required(ErrorMessage = "Dữ liệu đồng bộ (RowVersion) bị thiếu.")]
     public string RowVersion { get; set; } = string.Empty; 
-}
-
-public class UpdateRecipeNutritionDto
-{
-    public decimal Calories { get; set; }
-    public decimal Protein { get; set; }
-    public decimal Carbs { get; set; }
-    public decimal Fat { get; set; }
-    public decimal? Fiber { get; set; }
-    public decimal? Sodium { get; set; }
 }

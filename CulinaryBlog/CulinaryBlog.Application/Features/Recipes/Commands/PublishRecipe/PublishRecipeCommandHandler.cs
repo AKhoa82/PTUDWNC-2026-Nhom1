@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.PublishRecipe;
 
-public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand, RecipeDetailDto>
+public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand, RecipeDto>
 {
     private readonly IApplicationDbContext _context;
 
@@ -17,13 +17,14 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
         _context = context;
     }
 
-    public async Task<RecipeDetailDto> Handle(PublishRecipeCommand request, CancellationToken ct)
+    public async Task<RecipeDto> Handle(PublishRecipeCommand request, CancellationToken ct)
     {
         // 1. Lấy recipe kèm đầy đủ steps và ingredients để kiểm tra điều kiện publish
         var recipe = await _context.Recipes
             .Include(r => r.Steps)
             .Include(r => r.Ingredients)
-            .FirstOrDefaultAsync(r => r.Id == request.Id, ct)
+            .Include(r => r.Category)
+                .FirstOrDefaultAsync(r => r.Id == request.Id, ct)
             ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
 
         // 2. Kiểm tra quyền Resource-Based Authorization (chỉ Owner hoặc Admin mới được publish)
@@ -31,7 +32,7 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền xuất bản công thức này.");
+            throw new ForbiddenException("Bạn không có quyền xuất bản công thức này.");
         }
 
         // 3. Thực thi nghiệp vụ domain
@@ -39,10 +40,11 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
 
         // 4. Lưu thay đổi
         _context.Recipes.Update(recipe);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
 
         // 5. Trả về DTO
-        var result = recipe.Adapt<RecipeDetailDto>();
+        var result = recipe.Adapt<RecipeDto>();
         result.RowVersion = recipe.RowVersion.ToString();
         return result;
     }

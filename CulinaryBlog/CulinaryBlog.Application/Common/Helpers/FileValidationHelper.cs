@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using Microsoft.AspNetCore.Http;
 
 namespace CulinaryBlog.Application.Common.Helpers;
@@ -24,15 +24,15 @@ public static class FileValidationHelper
     public static async Task ValidateImageFileAsync(IFormFile file, CancellationToken cancellationToken = default)
     {
         if (file == null || file.Length == 0)
-            throw new ArgumentException("Tệp tin tải lên không được rỗng.");
+            throw new CulinaryBlog.Application.Features.Recipes.Images.RecipeImageValidationException("Tệp tin tải lên không được rỗng.");
         if (file.Length > MaxFileSizeBytes)
-            throw new ArgumentException("Kích thước file vượt quá giới hạn 5MB.");
+            throw new CulinaryBlog.Application.Features.Recipes.Images.RecipeImageValidationException("Kích thước file vượt quá giới hạn 5MB.");
         if (!MimeByExtension.TryGetValue(Path.GetExtension(file.FileName), out var mime) ||
             !mime.Equals(file.ContentType, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Phần mở rộng và MIME phải khớp định dạng JPEG, PNG, WebP hoặc AVIF.");
+            throw new CulinaryBlog.Application.Features.Recipes.Images.RecipeImageValidationException("Phần mở rộng và MIME phải khớp định dạng JPEG, PNG, WebP hoặc AVIF.");
         using var stream = file.OpenReadStream();
         if (!await ValidateMagicBytesAsync(stream, mime, cancellationToken))
-            throw new ArgumentException("Nội dung tệp tin không khớp định dạng ảnh (Magic Bytes validation failed).");
+            throw new CulinaryBlog.Application.Features.Recipes.Images.RecipeImageValidationException("Nội dung tệp tin không khớp định dạng ảnh (Magic Bytes validation failed).");
     }
 
     public static async Task<bool> ValidateMagicBytesAsync(Stream stream, string contentType, CancellationToken cancellationToken = default)

@@ -23,6 +23,7 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
             .Include(r => r.Images)
+            .Include(r => r.Author)
             .FirstOrDefaultAsync(r => r.Slug == request.Slug, cancellationToken);
 
         if (recipe is null)
@@ -40,7 +41,7 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
                 }
             }
         }
-
+        
         return new RecipeDetailDto
         {
             Id = recipe.Id,
@@ -57,6 +58,21 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             CategoryId = recipe.CategoryId,
             CategoryName = recipe.Category?.Name ?? string.Empty,
             AuthorId = recipe.AuthorId,
+            Author = recipe.Author != null ? new AuthorDto
+            {
+                Id = recipe.Author.Id,
+                UserName = recipe.Author.UserName ?? string.Empty,
+                FullName = recipe.Author.FullName ?? string.Empty
+            } : null,
+            Nutrition = recipe.Nutrition != null ? new RecipeNutritionDto
+            {
+                Calories = recipe.Nutrition.Calories,
+                Protein = recipe.Nutrition.Protein,
+                Carbs = recipe.Nutrition.Carbs,
+                Fat = recipe.Nutrition.Fat,
+                Fiber = recipe.Nutrition.Fiber,
+                Sodium = recipe.Nutrition.Sodium
+            } : null,
             CreatedAt = recipe.CreatedAt,
             UpdatedAt = recipe.UpdatedAt,
             PublishedAt = recipe.PublishedAt,

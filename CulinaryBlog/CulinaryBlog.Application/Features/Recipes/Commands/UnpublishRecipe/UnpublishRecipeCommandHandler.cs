@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.UnpublishRecipe;
 
-public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeCommand, RecipeDetailDto>
+public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeCommand, RecipeDto>
 {
     private readonly IApplicationDbContext _context;
 
@@ -17,25 +17,27 @@ public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeComm
         _context = context;
     }
 
-    public async Task<RecipeDetailDto> Handle(UnpublishRecipeCommand request, CancellationToken ct)
+    public async Task<RecipeDto> Handle(UnpublishRecipeCommand request, CancellationToken ct)
     {
         var recipe = await _context.Recipes
-            .FirstOrDefaultAsync(r => r.Id == request.Id, ct)
+            .Include(r => r.Category)
+                .FirstOrDefaultAsync(r => r.Id == request.Id, ct)
             ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
 
         if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền hủy xuất bản công thức này.");
+            throw new ForbiddenException("Bạn không có quyền hủy xuất bản công thức này.");
         }
 
         recipe.Unpublish();
 
         _context.Recipes.Update(recipe);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
 
-        var result = recipe.Adapt<RecipeDetailDto>();
+        var result = recipe.Adapt<RecipeDto>();
         result.RowVersion = recipe.RowVersion.ToString();
         return result;
     }

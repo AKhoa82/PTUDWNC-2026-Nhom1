@@ -81,6 +81,9 @@ public class Recipe : ConcurrentEntity
 
     public void Publish()
     {
+        if (Status == RecipeStatus.Published)
+            return;
+
         if (Steps is null || Steps.Count == 0)
         {
             throw new DomainException("Recipe phải có ít nhất 1 bước thực hiện trước khi xuất bản.");
@@ -91,11 +94,14 @@ public class Recipe : ConcurrentEntity
         }
 
         Status = RecipeStatus.Published;
-        PublishedAt = DateTime.UtcNow;
+        PublishedAt ??= DateTime.UtcNow;
     }
 
     public void Unpublish()
     {
+        if (Status != RecipeStatus.Published)
+            return;
+
         Status = RecipeStatus.Draft;
     }
 
