@@ -33,14 +33,17 @@ internal sealed class RecipeAcceptanceContext : DbContext, IApplicationDbContext
     public Recipe SeedRecipe(RecipeStatus status = RecipeStatus.Published)
     {
         var category = new Category { Id = Guid.NewGuid(), Name = "Món chính", Slug = "mon-chinh" };
+        var authorId = Guid.NewGuid();
+        var author = new User { Id = authorId, UserName = "testuser", FullName = "Test User" };
         var recipe = new Recipe
         {
             Id = Guid.NewGuid(), Title = "Phở bò", Slug = "pho-bo",
             Category = category, CategoryId = category.Id,
-            AuthorId = Guid.NewGuid(), Status = status,
+            AuthorId = authorId, Author = author, Status = status,
             PrepTimeMinutes = 10, CookingTimeMinutes = 30, Servings = 2,
             Instructions = "Nấu nước dùng"
         };
+        Users.Add(author);
         recipe.Steps.Add(RecipeStep.Create(recipe.Id, 1, "Nấu nước dùng"));
         recipe.Ingredients.Add(RecipeIngredient.Create(recipe.Id, "Thịt bò", 200, "g", null, 0));
         Recipes.Add(recipe);

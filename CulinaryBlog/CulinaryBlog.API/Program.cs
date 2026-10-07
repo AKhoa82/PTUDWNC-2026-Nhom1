@@ -312,19 +312,16 @@ app.MapPost("/api/v1/recipes", async (
         authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     }
 
-    var recipeId = await mediator.Send(
+    var recipe = await mediator.Send(
         new CreateRecipeCommand(request, authorId),
         cancellationToken);
 
     await cacheStore.InvalidateAsync();
 
-    return Results.Created($"/api/v1/recipes/{recipeId}", new
-    {
-        message = "Tạo công thức thành công.",
-        id = recipeId
-    });
+    return Results.Created($"/api/v1/recipes/{recipe.Slug}", recipe);
 })
 .WithName("CreateRecipeV1")
+.Produces<RecipeDto>(StatusCodes.Status201Created)
 .RequireAuthorization("AuthorPolicy")
 .WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
 

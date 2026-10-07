@@ -33,4 +33,5 @@ public class CreateRecipeRequest
 
     public List<CreateIngredientRequestDto> Ingredients { get; set; } = new();
     public List<CreateStepRequestDto> Steps { get; set; } = new();
+    public RecipeNutritionDto? Nutrition { get; set; }
 }

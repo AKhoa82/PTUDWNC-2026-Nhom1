@@ -411,12 +411,195 @@ public sealed class RecipeRequirementTests
         PrepTimeMinutes = 10, CookingTimeMinutes = 0, Servings = 2,
         Instructions = "Nấu nước dùng"
     };
+    [Fact]
+    public async Task Create_returns_RecipeDto()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        db.Users.Add(new User { Id = authorId, UserName = "testuser", FullName = "Test User" });
+        var category = new Category { Id = Guid.NewGuid(), Name = "Test Category", Slug = "test" };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var request = ValidCreateRequest();
+        request.CategoryId = category.Id;
+
+        var handler = new CreateRecipeCommandHandler(db);
+        var result = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.IsType<RecipeDto>(result);
+        Assert.Equal(RecipeStatus.Draft.ToString(), result.Status);
+        Assert.NotEmpty(result.Slug);
+        Assert.Equal(category.Name, result.CategoryName);
+    }
+
+    [Fact]
+    public async Task Create_duplicate_title_preserves_slug_suffix()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        db.Users.Add(new User { Id = authorId, UserName = "testuser", FullName = "Test User" });
+        var category = new Category { Id = Guid.NewGuid(), Name = "Test Category", Slug = "test" };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var request = ValidCreateRequest();
+        request.CategoryId = category.Id;
+        request.Title = "Duplicate Title";
+
+        var handler = new CreateRecipeCommandHandler(db);
+        var result1 = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+        var result2 = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        Assert.Equal("duplicate-title", result1.Slug);
+        Assert.Equal("duplicate-title-1", result2.Slug);
+    }
+
+    [Fact]
+    public async Task Create_with_Nutrition_maps_all_6_fields()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        db.Users.Add(new User { Id = authorId, UserName = "testuser", FullName = "Test User" });
+        var category = new Category { Id = Guid.NewGuid(), Name = "Test Category", Slug = "test" };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var request = ValidCreateRequest();
+        request.CategoryId = category.Id;
+        request.Nutrition = new RecipeNutritionDto { Calories = 100, Protein = 10, Carbs = 20, Fat = 5, Fiber = 2, Sodium = 300 };
+
+        var handler = new CreateRecipeCommandHandler(db);
+        var result = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        Assert.NotNull(result.Nutrition);
+        Assert.Equal(100, result.Nutrition.Calories);
+        Assert.Equal(10, result.Nutrition.Protein);
+        Assert.Equal(20, result.Nutrition.Carbs);
+        Assert.Equal(5, result.Nutrition.Fat);
+        Assert.Equal(2, result.Nutrition.Fiber);
+        Assert.Equal(300, result.Nutrition.Sodium);
+    }
+
+    [Fact]
+    public async Task Create_without_Nutrition_works()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        db.Users.Add(new User { Id = authorId, UserName = "testuser", FullName = "Test User" });
+        var category = new Category { Id = Guid.NewGuid(), Name = "Test Category", Slug = "test" };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var request = ValidCreateRequest();
+        request.CategoryId = category.Id;
+        request.Nutrition = null;
+
+        var handler = new CreateRecipeCommandHandler(db);
+        var result = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        Assert.Null(result.Nutrition);
+    }
+
+    [Fact]
+    public void ImageUrl_over_500_validation_invalid()
+    {
+        var request = ValidCreateRequest();
+        request.ImageUrl = new string('a', 501);
+        var validator = new CreateRecipeCommandValidator();
+        var result = validator.Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == "Request.ImageUrl");
+    }
+
+    [Fact]
+    public async Task Detail_returns_Author_and_null_Nutrition_when_absent()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var recipe = db.SeedRecipe();
+        var handler = new GetRecipeBySlugQueryHandler(db);
+        var result = await handler.Handle(new GetRecipeBySlugQuery(recipe.Slug, null, false), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Null(result.Nutrition);
+        Assert.NotNull(result.Author);
+        Assert.Equal(recipe.AuthorId, result.Author.Id);
+        Assert.Equal("testuser", result.Author.UserName);
+        Assert.Equal("Test User", result.Author.FullName);
+    }
+
+    [Fact]
+    public async Task Update_returns_RecipeDto_and_changes_CategoryName()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        var cat1 = new Category { Id = Guid.NewGuid(), Name = "C1", Slug = "c1" };
+        var cat2 = new Category { Id = Guid.NewGuid(), Name = "C2", Slug = "c2" };
+        db.Categories.AddRange(cat1, cat2);
+        var recipe = new Recipe { Id = Guid.NewGuid(), Title = "A", Slug = "a", Difficulty = RecipeDifficulty.Easy, CategoryId = cat1.Id, AuthorId = authorId, Status = RecipeStatus.Draft };
+        db.Recipes.Add(recipe);
+        await db.SaveChangesAsync();
+
+        var request = new UpdateRecipeRequest { Title = "A", CategoryId = cat2.Id, RowVersion = recipe.RowVersion.ToString() };
+        var handler = new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommandHandler(db);
+        var result = await handler.Handle(new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(recipe.Id, request, authorId.ToString(), false), CancellationToken.None);
+
+        Assert.IsType<RecipeDto>(result);
+        Assert.Equal(cat2.Name, result.CategoryName);
+    }
+
+    [Fact]
+    public async Task Update_Nutrition_maps_all_6_fields()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        var cat1 = new Category { Id = Guid.NewGuid(), Name = "C1", Slug = "c1" };
+        db.Categories.Add(cat1);
+        var recipe = new Recipe { Id = Guid.NewGuid(), Title = "A", Slug = "a", Difficulty = RecipeDifficulty.Easy, CategoryId = cat1.Id, AuthorId = authorId, Status = RecipeStatus.Draft };
+        db.Recipes.Add(recipe);
+        await db.SaveChangesAsync();
+
+        var request = new UpdateRecipeRequest { Title = "A", CategoryId = cat1.Id, RowVersion = recipe.RowVersion.ToString(), Nutrition = new RecipeNutritionDto { Calories = 10, Protein = 20, Carbs = 30, Fat = 40, Fiber = 50, Sodium = 60 } };
+        var handler = new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommandHandler(db);
+        var result = await handler.Handle(new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(recipe.Id, request, authorId.ToString(), false), CancellationToken.None);
+
+        Assert.NotNull(result.Nutrition);
+        Assert.Equal(10, result.Nutrition.Calories);
+        Assert.Equal(20, result.Nutrition.Protein);
+        Assert.Equal(30, result.Nutrition.Carbs);
+        Assert.Equal(40, result.Nutrition.Fat);
+        Assert.Equal(50, result.Nutrition.Fiber);
+        Assert.Equal(60, result.Nutrition.Sodium);
+    }
+    [Fact]
+    public void Draft_with_valid_steps_and_ingredients_can_be_published_and_sets_publishedat()
+    {
+        var recipe = new Recipe { Status = RecipeStatus.Draft };
+        recipe.Steps.Add(RecipeStep.Create(Guid.NewGuid(), 1, "Nấu"));
+        recipe.Ingredients.Add(RecipeIngredient.Create(Guid.NewGuid(), "Thịt", 1, "kg", null, 0));
+
+        Assert.Null(recipe.PublishedAt);
+        recipe.Publish();
+
+        Assert.Equal(RecipeStatus.Published, recipe.Status);
+        Assert.NotNull(recipe.PublishedAt);
+    }
+
+    [Fact]
+    public void Draft_to_unpublish_keeps_draft()
+    {
+        var recipe = new Recipe { Status = RecipeStatus.Draft };
+        recipe.Unpublish();
+        Assert.Equal(RecipeStatus.Draft, recipe.Status);
+    }
+
+    [Fact]
+    public void Published_to_unpublish_becomes_draft()
+    {
+        var recipe = new Recipe { Status = RecipeStatus.Published };
+        recipe.Unpublish();
+        Assert.Equal(RecipeStatus.Draft, recipe.Status);
+    }
 }
-
-
-
-
-
-
-
-
