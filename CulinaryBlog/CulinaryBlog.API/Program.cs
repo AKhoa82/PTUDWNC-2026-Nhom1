@@ -22,6 +22,7 @@ using Npgsql;
 using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Infrastructure;
 using CulinaryBlog.Infrastructure.Jobs;
 using Hangfire;
@@ -143,21 +144,32 @@ builder.Services.AddOpenApi(options =>
             Description = "Nhập JWT Token vào đây"
         });
 
-        document.SecurityRequirements.Add(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-        {
-            {
-                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-                {
-                    Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                    {
-                        Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                        Id = "Bearer"
-                    }
-                },
-                Array.Empty<string>()
-            }
-        });
+        return Task.CompletedTask;
+    });
 
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+        var allowAnonymous = metadata.OfType<Microsoft.AspNetCore.Authorization.IAllowAnonymous>().Any();
+        var authorize = metadata.OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>().Any();
+
+        if (authorize && !allowAnonymous)
+        {
+            operation.Security.Add(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+            {
+                {
+                    new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                    {
+                        Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                        {
+                            Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    Array.Empty<string>()
+                }
+            });
+        }
         return Task.CompletedTask;
     });
 });
@@ -259,7 +271,9 @@ app.MapGet("/api/v1/recipes", async (
 })
 .WithName("GetRecipesV1")
 .WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt. Giá trị rỗng hoặc không hỗ trợ dùng mặc định. Sắp xếp trước phân trang, dùng Id tăng dần khi trùng giá trị.")
-.WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
+.WithSummary("Danh sách công thức")
+.Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
 .AllowAnonymous();
 
 app.MapGet("/api/v1/recipes/search", async (
@@ -274,7 +288,9 @@ app.MapGet("/api/v1/recipes/search", async (
         cancellationToken));
 })
 .WithName("SearchRecipesV1")
-.WithSummary("FR-SRCH-001 – Tìm kiếm toàn văn, không dấu, tiền tố; xếp hạng độ liên quan.")
+.WithSummary("Tìm kiếm toàn văn")
+.Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
 .AllowAnonymous();
 
 app.MapGet("/api/v1/recipes/{slug}", async (
@@ -296,7 +312,10 @@ app.MapGet("/api/v1/recipes/{slug}", async (
     return Results.Ok(result);
 })
 .WithName("GetRecipeBySlugV1")
-.WithSummary("FR-RCP-002 – Xem chi tiết công thức")
+.WithSummary("Xem chi tiết công thức")
+.Produces<RecipeDetailDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status404NotFound)
 .CacheOutput("RecipeDetail")
 .AllowAnonymous();
 
@@ -325,8 +344,12 @@ app.MapPost("/api/v1/recipes", async (
 })
 .WithName("CreateRecipeV1")
 .Produces<RecipeDto>(StatusCodes.Status201Created)
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status409Conflict)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
 .RequireAuthorization("AuthorPolicy")
-.WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
+.WithSummary("Tạo công thức");
 
 app.MapPut("/api/v1/recipes/{id:guid}", async (
     Guid id,
@@ -351,7 +374,13 @@ app.MapPut("/api/v1/recipes/{id:guid}", async (
 })
 .WithName("UpdateRecipeV1")
 .RequireAuthorization("AuthorPolicy")
-.WithSummary("FR-RCP-004 – Cập nhật công thức nấu ăn");
+.Produces<RecipeDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status404NotFound)
+.ProducesProblem(StatusCodes.Status409Conflict)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.WithSummary("Cập nhật công thức");
 
 using (var scope = app.Services.CreateScope())
 {

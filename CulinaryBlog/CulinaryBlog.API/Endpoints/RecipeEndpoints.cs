@@ -18,7 +18,7 @@ public static class RecipeEndpoints
 {
     public static IEndpointRouteBuilder MapRecipeEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/recipes");
+            var group = app.MapGroup("/api/v1/recipes");
 
         // PATCH /api/v1/recipes/{id}/publish - Xuất bản công thức
         group.MapPatch("/{id:guid}/publish", async (
@@ -32,19 +32,18 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new PublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(result.Slug, ct);
+                await cacheStore.InvalidateAsync(cancellationToken: ct);
 
                 return Results.Ok(result);
         })
         .WithName("PublishRecipe")
         .WithSummary("Xuất bản công thức nấu ăn")
-        .WithDescription("Chuyển trạng thái công thức từ Draft sang Published. Yêu cầu phải có ít nhất 1 bước thực hiện và 1 nguyên liệu.")
-        .RequireAuthorization()
-        .Produces<RecipeDetailDto>(200)
-        .ProducesProblem(401)
-        .ProducesProblem(403)
-        .ProducesProblem(404)
-        .ProducesProblem(422);
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<RecipeDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         // PATCH /api/v1/recipes/{id}/unpublish - Hủy xuất bản công thức
         group.MapPatch("/{id:guid}/unpublish", async (
@@ -58,18 +57,17 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new UnpublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(result.Slug, ct);
+                await cacheStore.InvalidateAsync(cancellationToken: ct);
 
                 return Results.Ok(result);
         })
         .WithName("UnpublishRecipe")
         .WithSummary("Hủy xuất bản công thức nấu ăn")
-        .WithDescription("Đưa công thức trở lại trạng thái Draft (chỉ tác giả hoặc admin mới thấy).")
-        .RequireAuthorization()
-        .Produces<RecipeDetailDto>(200)
-        .ProducesProblem(401)
-        .ProducesProblem(403)
-        .ProducesProblem(404);
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<RecipeDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 
         // PATCH /api/v1/recipes/{id}/archive - Lưu trữ công thức
         group.MapPatch("/{id:guid}/archive", async (
@@ -83,23 +81,23 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(result.Slug, ct);
+                await cacheStore.InvalidateAsync(cancellationToken: ct);
 
                 return Results.Ok(result);
         })
         .WithName("ArchiveRecipe")
         .WithSummary("Lưu trữ công thức nấu ăn")
-        .WithDescription("Chuyển công thức sang trạng thái Archived. Recipe không xuất hiện trong public listing.")
-        .RequireAuthorization()
-        .Produces<RecipeDetailDto>(200)
-        .ProducesProblem(401)
-        .ProducesProblem(403)
-        .ProducesProblem(404);
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<RecipeDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
             ISender sender,
             ClaimsPrincipal user,
+            
             RecipeImageCacheInvalidator cacheStore,
             CancellationToken cancellationToken) =>
         {
@@ -113,22 +111,22 @@ public static class RecipeEndpoints
 
             var isAdmin = user.IsInRole("Admin");
 
-                await sender.Send(
-                    new DeleteRecipeCommand(
-                        id,
-                        currentUserId,
-                        isAdmin),
-                    cancellationToken);
+            await sender.Send(
+                new DeleteRecipeCommand(
+                    id,
+                    currentUserId,
+                    isAdmin),
+                cancellationToken);
 
-                await cacheStore.InvalidateAsync(cancellationToken: cancellationToken);
+            await cacheStore.InvalidateAsync(cancellationToken: cancellationToken);
 
-                return Results.NoContent();
+
+
+            return Results.NoContent();
         })
         .WithName("DeleteRecipe")
         .WithSummary("FR-RCP-007 - Xóa công thức")
-        .WithDescription(
-            "Xóa mềm công thức. Chỉ tác giả sở hữu hoặc Admin được phép thực hiện.")
-        .RequireAuthorization()
+        .RequireAuthorization("AuthorPolicy")
         .Produces(StatusCodes.Status204NoContent)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
