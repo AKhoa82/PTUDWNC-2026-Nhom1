@@ -84,7 +84,7 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
 
         try
         {
-            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
             await _context.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)

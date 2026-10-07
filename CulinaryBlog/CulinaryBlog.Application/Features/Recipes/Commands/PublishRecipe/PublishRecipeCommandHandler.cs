@@ -39,7 +39,7 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
 
         // 4. Lưu thay đổi
         _context.Recipes.Update(recipe);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
 
         // 5. Trả về DTO

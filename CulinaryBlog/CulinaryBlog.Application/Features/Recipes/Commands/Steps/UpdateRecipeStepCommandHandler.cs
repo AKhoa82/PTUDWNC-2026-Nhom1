@@ -48,7 +48,7 @@ public class UpdateRecipeStepCommandHandler : IRequestHandler<UpdateRecipeStepCo
             imageUrl: request.ImageUrl
         );
 
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RecipeStepDto
@@ -62,4 +62,5 @@ public class UpdateRecipeStepCommandHandler : IRequestHandler<UpdateRecipeStepCo
         };
     }
 }
+
 

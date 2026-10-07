@@ -25,11 +25,15 @@ public static class RecipeEndpoints
             Guid id,
             ISender sender,
             ClaimsPrincipal user,
+            RecipeImageCacheInvalidator cacheStore,
             CancellationToken ct) =>
         {
                 var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new PublishRecipeCommand(id, currentUserId, isAdmin), ct);
+                
+                await cacheStore.InvalidateAsync(result.Slug, ct);
+
                 return Results.Ok(result);
         })
         .WithName("PublishRecipe")
@@ -47,11 +51,15 @@ public static class RecipeEndpoints
             Guid id,
             ISender sender,
             ClaimsPrincipal user,
+            RecipeImageCacheInvalidator cacheStore,
             CancellationToken ct) =>
         {
                 var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new UnpublishRecipeCommand(id, currentUserId, isAdmin), ct);
+                
+                await cacheStore.InvalidateAsync(result.Slug, ct);
+
                 return Results.Ok(result);
         })
         .WithName("UnpublishRecipe")
@@ -68,11 +76,15 @@ public static class RecipeEndpoints
             Guid id,
             ISender sender,
             ClaimsPrincipal user,
+            RecipeImageCacheInvalidator cacheStore,
             CancellationToken ct) =>
         {
                 var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, isAdmin), ct);
+                
+                await cacheStore.InvalidateAsync(result.Slug, ct);
+
                 return Results.Ok(result);
         })
         .WithName("ArchiveRecipe")
@@ -88,6 +100,7 @@ public static class RecipeEndpoints
             Guid id,
             ISender sender,
             ClaimsPrincipal user,
+            RecipeImageCacheInvalidator cacheStore,
             CancellationToken cancellationToken) =>
         {
             var currentUserId =
@@ -106,6 +119,8 @@ public static class RecipeEndpoints
                         currentUserId,
                         isAdmin),
                     cancellationToken);
+
+                await cacheStore.InvalidateAsync(cancellationToken: cancellationToken);
 
                 return Results.NoContent();
         })

@@ -52,7 +52,7 @@ public class UpdateIngredientCommandHandler : IRequestHandler<UpdateIngredientCo
             request.SortOrder
         );
 
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
 
         return new IngredientDto

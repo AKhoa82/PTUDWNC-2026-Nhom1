@@ -33,7 +33,7 @@ public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeComm
         recipe.Unpublish();
 
         _context.Recipes.Update(recipe);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
 
         var result = recipe.Adapt<RecipeDetailDto>();

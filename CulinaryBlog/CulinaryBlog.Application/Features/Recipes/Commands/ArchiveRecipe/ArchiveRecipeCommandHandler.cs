@@ -33,7 +33,7 @@ public class ArchiveRecipeCommandHandler : IRequestHandler<ArchiveRecipeCommand,
         recipe.Archive();
 
         _context.Recipes.Update(recipe);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
         
         var result = recipe.Adapt<RecipeDetailDto>();

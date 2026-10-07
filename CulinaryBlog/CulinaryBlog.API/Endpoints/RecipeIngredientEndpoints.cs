@@ -16,7 +16,7 @@ public static class RecipeIngredientEndpoints
     {
         var group = app.MapGroup("/api/v1/recipes").WithTags("Recipe Ingredients");
 
-        group.MapPost("/{id:guid}/ingredients", async (Guid id, AddIngredientRequest request, IMediator mediator, ClaimsPrincipal user) =>
+        group.MapPost("/{id:guid}/ingredients", async (Guid id, AddIngredientRequest request, IMediator mediator, ClaimsPrincipal user, RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             var isAdmin = user.IsInRole("Admin");
@@ -37,12 +37,13 @@ public static class RecipeIngredientEndpoints
                 isAdmin
             );
 
-            var result = await mediator.Send(command);
+            var result = await mediator.Send(command, ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
             return Results.Created($"/api/v1/recipes/{id}/ingredients/{result.Id}", result);
         })
         .RequireAuthorization();
 
-        group.MapPut("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, UpdateIngredientRequest request, IMediator mediator, ClaimsPrincipal user) =>
+        group.MapPut("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, UpdateIngredientRequest request, IMediator mediator, ClaimsPrincipal user, RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             var isAdmin = user.IsInRole("Admin");
@@ -64,12 +65,13 @@ public static class RecipeIngredientEndpoints
                 isAdmin
             );
 
-            var result = await mediator.Send(command);
+            var result = await mediator.Send(command, ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
             return Results.Ok(result);
         })
         .RequireAuthorization();
 
-        group.MapDelete("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, IMediator mediator, ClaimsPrincipal user) =>
+        group.MapDelete("/{id:guid}/ingredients/{ingId:guid}", async (Guid id, Guid ingId, IMediator mediator, ClaimsPrincipal user, RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier);
             var isAdmin = user.IsInRole("Admin");
@@ -86,7 +88,8 @@ public static class RecipeIngredientEndpoints
                 isAdmin
             );
 
-            await mediator.Send(command);
+            await mediator.Send(command, ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
             return Results.NoContent();
         })
         .RequireAuthorization();

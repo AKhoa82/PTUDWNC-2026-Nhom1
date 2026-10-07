@@ -122,7 +122,7 @@ builder.Services.AddStackExchangeRedisOutputCache(options =>
 builder.Services.AddOutputCache(options =>
 {
     options.AddPolicy("RecipeDetail", builder => 
-        builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
+        builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeDetailCachePolicy>());
 });
 builder.Services.AddInfrastructureServices(builder.Configuration);
 
@@ -316,7 +316,7 @@ app.MapPost("/api/v1/recipes", async (
         new CreateRecipeCommand(request, authorId),
         cancellationToken);
 
-    await cacheStore.InvalidateAsync();
+    await cacheStore.InvalidateAsync(recipe.Slug, cancellationToken);
 
     return Results.Created($"/api/v1/recipes/{recipe.Slug}", recipe);
 })
@@ -342,7 +342,7 @@ app.MapPut("/api/v1/recipes/{id:guid}", async (
         new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin), 
         cancellationToken);
 
-    await cacheStore.InvalidateAsync();
+    await cacheStore.InvalidateAsync(result.Slug, cancellationToken);
 
     return Results.Ok(result);
 })

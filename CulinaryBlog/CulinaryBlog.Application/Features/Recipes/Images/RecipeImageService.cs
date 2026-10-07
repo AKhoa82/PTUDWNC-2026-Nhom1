@@ -113,7 +113,7 @@ public sealed class RecipeImageService(
             work.Db.RecipeImages.Add(image);
             storedFile.Status = StoredFileStatus.Active;
             storedFile.UploadExpiresAt = null;
-            work.Db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+            work.Db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
             await work.Db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             return Map(image);
@@ -148,7 +148,7 @@ public sealed class RecipeImageService(
             recipe.ImageUrl = image.OriginalUrl;
         }
 
-        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         logger.LogInformation("User {UserId} updated recipe image {ImageId} for {RecipeId} at {Timestamp}",
@@ -182,7 +182,7 @@ public sealed class RecipeImageService(
             storedFile.DeletionRequestedAt ??= DateTime.UtcNow;
         }
 
-        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         if (storedFile is not null && storedFile.DeletedAt is null)
@@ -223,3 +223,4 @@ public sealed class RecipeImageService(
         image.Id, image.OriginalUrl, image.MediumUrl, image.ThumbnailUrl,
         image.AltText, image.IsPrimary, image.OrderIndex);
 }
+

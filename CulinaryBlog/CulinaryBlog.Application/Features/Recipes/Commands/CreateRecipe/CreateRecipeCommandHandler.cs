@@ -87,7 +87,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         }
 
         _context.Recipes.Add(recipe);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
 
         var result = recipe.Adapt<RecipeDto>();
@@ -123,3 +123,4 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         return slug;
     }
 }
+

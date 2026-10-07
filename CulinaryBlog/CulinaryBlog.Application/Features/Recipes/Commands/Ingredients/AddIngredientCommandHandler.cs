@@ -46,7 +46,7 @@ public class AddIngredientCommandHandler : IRequestHandler<AddIngredientCommand,
         );
 
         _context.RecipeIngredients.Add(ingredient);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
 
         return new IngredientDto
@@ -60,3 +60,4 @@ public class AddIngredientCommandHandler : IRequestHandler<AddIngredientCommand,
         };
     }
 }
+
