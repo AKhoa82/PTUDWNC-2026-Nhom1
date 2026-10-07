@@ -1,3 +1,4 @@
+using CulinaryBlog.Domain.Entities;
 using MediatR;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
@@ -47,6 +48,7 @@ public class UpdateRecipeStepCommandHandler : IRequestHandler<UpdateRecipeStepCo
             imageUrl: request.ImageUrl
         );
 
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RecipeStepDto
@@ -60,3 +62,4 @@ public class UpdateRecipeStepCommandHandler : IRequestHandler<UpdateRecipeStepCo
         };
     }
 }
+

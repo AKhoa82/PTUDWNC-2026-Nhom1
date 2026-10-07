@@ -70,7 +70,7 @@ public sealed class RecipeImageService(
                         await recovery.Db.SaveChangesAsync(recoveryTimeout.Token);
                     }
                     await recoveryTx.CommitAsync(recoveryTimeout.Token);
-                    if (uploadError is RecipeImageValidationException or UnauthorizedAccessException or ForbiddenException or NotFoundException or ArgumentException)
+                    if (uploadError is RecipeImageValidationException or UnauthorizedAccessException or ForbiddenException or NotFoundException)
                         System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(uploadError).Throw();
                     throw new FileOperationUnavailableException("Upload did not complete; cleanup is scheduled.", uploadError);
                 }

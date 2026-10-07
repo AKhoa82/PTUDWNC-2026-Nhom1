@@ -27,12 +27,13 @@ public class ArchiveRecipeCommandHandler : IRequestHandler<ArchiveRecipeCommand,
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền lưu trữ công thức này.");
+            throw new ForbiddenException("Bạn không có quyền lưu trữ công thức này.");
         }
 
         recipe.Archive();
 
         _context.Recipes.Update(recipe);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(cancellationToken);
         
         var result = recipe.Adapt<RecipeDetailDto>();

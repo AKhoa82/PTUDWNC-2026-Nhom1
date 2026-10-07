@@ -29,7 +29,7 @@ private readonly ILogger<DeleteRecipeCommandHandler> _logger;
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền xóa công thức này.");
+            throw new ForbiddenException("Bạn không có quyền xóa công thức này.");
         }
 
         // Soft delete

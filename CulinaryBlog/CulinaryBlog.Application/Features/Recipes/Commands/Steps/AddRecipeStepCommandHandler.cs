@@ -52,6 +52,7 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
 
         recipe.Steps.Add(step);
         _context.RecipeSteps.Add(step);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RecipeStepDto

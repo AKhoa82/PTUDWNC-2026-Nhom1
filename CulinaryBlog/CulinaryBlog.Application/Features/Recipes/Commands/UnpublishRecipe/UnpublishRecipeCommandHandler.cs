@@ -27,12 +27,13 @@ public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeComm
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền hủy xuất bản công thức này.");
+            throw new ForbiddenException("Bạn không có quyền hủy xuất bản công thức này.");
         }
 
         recipe.Unpublish();
 
         _context.Recipes.Update(recipe);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(ct);
 
         var result = recipe.Adapt<RecipeDetailDto>();

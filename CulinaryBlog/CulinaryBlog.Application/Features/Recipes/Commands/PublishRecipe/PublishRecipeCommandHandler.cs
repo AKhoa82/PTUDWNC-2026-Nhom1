@@ -31,7 +31,7 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền xuất bản công thức này.");
+            throw new ForbiddenException("Bạn không có quyền xuất bản công thức này.");
         }
 
         // 3. Thực thi nghiệp vụ domain
@@ -39,6 +39,7 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
 
         // 4. Lưu thay đổi
         _context.Recipes.Update(recipe);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(ct);
 
         // 5. Trả về DTO

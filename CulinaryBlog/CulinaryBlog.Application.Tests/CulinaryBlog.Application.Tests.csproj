@@ -13,5 +13,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
     <ProjectReference Include="../CulinaryBlog.Application/CulinaryBlog.Application.csproj" />
     <ProjectReference Include="../CulinaryBlog.Infrastructure/CulinaryBlog.Infrastructure.csproj" />
+    <ProjectReference Include="../CulinaryBlog.API/CulinaryBlog.API.csproj" />
   </ItemGroup>
 </Project>

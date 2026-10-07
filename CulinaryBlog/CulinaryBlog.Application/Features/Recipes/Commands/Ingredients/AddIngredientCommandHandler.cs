@@ -6,6 +6,7 @@ using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using CulinaryBlog.Application.Common.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Ingredients;
 
@@ -25,14 +26,14 @@ public class AddIngredientCommandHandler : IRequestHandler<AddIngredientCommand,
 
         if (recipe == null)
         {
-            throw new InvalidOperationException("Recipe không tồn tại."); // Should be a custom Exception like NotFoundException
+            throw new NotFoundException("Recipe không tồn tại."); // Should be a custom Exception like NotFoundException
         }
 
         if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
             throw new UnauthorizedAccessException("Invalid User ID");
         if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền sửa công thức này.");
+            throw new ForbiddenException("Bạn không có quyền sửa công thức này.");
         }
 
         var ingredient = RecipeIngredient.Create(
@@ -45,6 +46,7 @@ public class AddIngredientCommandHandler : IRequestHandler<AddIngredientCommand,
         );
 
         _context.RecipeIngredients.Add(ingredient);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
         await _context.SaveChangesAsync(cancellationToken);
 
         return new IngredientDto

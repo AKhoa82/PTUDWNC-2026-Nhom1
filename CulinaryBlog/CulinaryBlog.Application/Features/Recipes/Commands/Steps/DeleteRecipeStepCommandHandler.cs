@@ -1,3 +1,4 @@
+using CulinaryBlog.Domain.Entities;
 using MediatR;
 using CulinaryBlog.Application.Contracts.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -51,6 +52,7 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
 
         if (remainingSteps.Count == 0)
         {
+            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
             await _context.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -75,6 +77,7 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
                 {
                     step.StepNumber -= (offset + 1);
                 }
+                _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
                 await dbContext.SaveChangesAsync(cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
@@ -92,7 +95,9 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
             await _context.SaveChangesAsync(cancellationToken);
             
             foreach (var step in remainingSteps) step.StepNumber -= (offset + 1);
+            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
             await _context.SaveChangesAsync(cancellationToken);
         }
     }
 }
+
