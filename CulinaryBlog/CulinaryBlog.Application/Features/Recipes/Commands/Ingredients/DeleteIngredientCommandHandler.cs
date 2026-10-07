@@ -6,6 +6,8 @@ using CulinaryBlog.Application.Contracts.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Application.Common.Exceptions;
+using CulinaryBlog.Application.Features.Recipes;
+using CulinaryBlog.Domain.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Ingredients;
 
@@ -20,6 +22,9 @@ public class DeleteIngredientCommandHandler : IRequestHandler<DeleteIngredientCo
 
     public async Task Handle(DeleteIngredientCommand request, CancellationToken cancellationToken)
     {
+        await using var transaction = await RecipeMutationTransaction.BeginAsync(
+            _context, request.RecipeId, cancellationToken);
+
         var recipe = await _context.Recipes
             .FirstOrDefaultAsync(r => r.Id == request.RecipeId, cancellationToken);
 
@@ -43,9 +48,15 @@ public class DeleteIngredientCommandHandler : IRequestHandler<DeleteIngredientCo
             throw new NotFoundException("Nguyên liệu không tồn tại."); // Custom exception
         }
 
+        if (recipe.Status == RecipeStatus.Published &&
+            await _context.RecipeIngredients.CountAsync(ri => ri.RecipeId == request.RecipeId, cancellationToken) <= 1)
+            throw new DomainException("Recipe đã xuất bản phải có ít nhất 1 nguyên liệu.");
+
         _context.RecipeIngredients.Remove(ingredient);
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
     }
 }
 

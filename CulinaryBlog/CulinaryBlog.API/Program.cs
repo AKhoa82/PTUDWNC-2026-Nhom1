@@ -409,13 +409,38 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 
-    if (!await dbContext.Recipes.AnyAsync())
+    const string sampleAuthorUserName = "sample-recipe-author";
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+
+    if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
+        var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+        if (sampleAuthor is null)
+        {
+            sampleAuthor = new User
+            {
+                UserName = sampleAuthorUserName,
+                Email = "sample-recipe-author@culinaryblog.local",
+                FullName = "Tác giả công thức mẫu"
+            };
+            var createResult = await userManager.CreateAsync(sampleAuthor);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create sample recipe author: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+        }
+
+        if (!await userManager.IsInRoleAsync(sampleAuthor, "Author"))
+        {
+            var roleResult = await userManager.AddToRoleAsync(sampleAuthor, "Author");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign Author role to sample recipe author: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+
         var monVietId = Guid.Parse("11111111-0000-0000-0000-000000000001");
         var monAId    = Guid.Parse("11111111-0000-0000-0000-000000000002");
         var monAuId   = Guid.Parse("11111111-0000-0000-0000-000000000003");
 
-        dbContext.Recipes.AddRange(
+        var sampleRecipes = new[]
+        {
             new Recipe
             {
                 Title              = "Phở Bò Hà Nội",
@@ -428,6 +453,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Hard,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -442,6 +468,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -456,6 +483,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Easy,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -470,6 +498,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Expert,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -484,6 +513,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -498,11 +528,32 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             }
-        );
+        };
+
+        foreach (var recipe in sampleRecipes)
+            SampleRecipeContent.Ensure(recipe);
+
+        dbContext.Recipes.AddRange(sampleRecipes);
 
         await dbContext.SaveChangesAsync();
+    }
+
+    var existingSampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+    if (existingSampleAuthor is not null)
+    {
+        var existingSampleRecipes = await dbContext.Recipes
+            .Where(recipe => recipe.AuthorId == existingSampleAuthor.Id)
+            .Include(recipe => recipe.Ingredients)
+            .Include(recipe => recipe.Steps)
+            .ToListAsync();
+        var hasMissingContent = false;
+        foreach (var recipe in existingSampleRecipes)
+            hasMissingContent |= SampleRecipeContent.Ensure(recipe, dbContext);
+        if (hasMissingContent)
+            await dbContext.SaveChangesAsync();
     }
 }
 

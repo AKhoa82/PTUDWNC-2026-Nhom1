@@ -64,6 +64,7 @@ public class CreateStepRequestDtoValidator : AbstractValidator<CreateStepRequest
     public CreateStepRequestDtoValidator()
     {
         RuleFor(x => x.Description)
-            .NotEmpty().WithMessage("Mô tả bước thực hiện không được để trống.");
+            .NotEmpty().WithMessage("Mô tả bước thực hiện không được để trống.")
+            .MaximumLength(2000).WithMessage("Mô tả bước thực hiện không được vượt quá 2000 ký tự.");
     }
 }
