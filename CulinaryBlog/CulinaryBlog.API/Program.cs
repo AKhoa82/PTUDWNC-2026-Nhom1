@@ -409,10 +409,11 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 
+    const string sampleAuthorUserName = "sample-recipe-author";
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+
     if (!await dbContext.Recipes.AnyAsync())
     {
-        const string sampleAuthorUserName = "sample-recipe-author";
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
         var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
         if (sampleAuthor is null)
         {
@@ -438,7 +439,8 @@ using (var scope = app.Services.CreateScope())
         var monAId    = Guid.Parse("11111111-0000-0000-0000-000000000002");
         var monAuId   = Guid.Parse("11111111-0000-0000-0000-000000000003");
 
-        dbContext.Recipes.AddRange(
+        var sampleRecipes = new[]
+        {
             new Recipe
             {
                 Title              = "Phở Bò Hà Nội",
@@ -529,9 +531,29 @@ using (var scope = app.Services.CreateScope())
                 AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             }
-        );
+        };
+
+        foreach (var recipe in sampleRecipes)
+            SampleRecipeContent.Ensure(recipe);
+
+        dbContext.Recipes.AddRange(sampleRecipes);
 
         await dbContext.SaveChangesAsync();
+    }
+
+    var existingSampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+    if (existingSampleAuthor is not null)
+    {
+        var existingSampleRecipes = await dbContext.Recipes
+            .Where(recipe => recipe.AuthorId == existingSampleAuthor.Id)
+            .Include(recipe => recipe.Ingredients)
+            .Include(recipe => recipe.Steps)
+            .ToListAsync();
+        var hasMissingContent = false;
+        foreach (var recipe in existingSampleRecipes)
+            hasMissingContent |= SampleRecipeContent.Ensure(recipe, dbContext);
+        if (hasMissingContent)
+            await dbContext.SaveChangesAsync();
     }
 }
 
