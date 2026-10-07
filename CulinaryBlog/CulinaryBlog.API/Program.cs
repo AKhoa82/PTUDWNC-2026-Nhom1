@@ -411,6 +411,29 @@ using (var scope = app.Services.CreateScope())
 
     if (!await dbContext.Recipes.AnyAsync())
     {
+        const string sampleAuthorUserName = "sample-recipe-author";
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+        var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+        if (sampleAuthor is null)
+        {
+            sampleAuthor = new User
+            {
+                UserName = sampleAuthorUserName,
+                Email = "sample-recipe-author@culinaryblog.local",
+                FullName = "Tác giả công thức mẫu"
+            };
+            var createResult = await userManager.CreateAsync(sampleAuthor);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create sample recipe author: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+        }
+
+        if (!await userManager.IsInRoleAsync(sampleAuthor, "Author"))
+        {
+            var roleResult = await userManager.AddToRoleAsync(sampleAuthor, "Author");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign Author role to sample recipe author: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+
         var monVietId = Guid.Parse("11111111-0000-0000-0000-000000000001");
         var monAId    = Guid.Parse("11111111-0000-0000-0000-000000000002");
         var monAuId   = Guid.Parse("11111111-0000-0000-0000-000000000003");
@@ -428,6 +451,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Hard,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -442,6 +466,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -456,6 +481,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Easy,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -470,6 +496,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Expert,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -484,6 +511,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -498,6 +526,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             }
         );
