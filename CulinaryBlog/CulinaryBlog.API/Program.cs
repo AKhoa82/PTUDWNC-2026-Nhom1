@@ -412,7 +412,7 @@ using (var scope = app.Services.CreateScope())
     const string sampleAuthorUserName = "sample-recipe-author";
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
 
-    if (!await dbContext.Recipes.AnyAsync())
+    if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
         var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
         if (sampleAuthor is null)

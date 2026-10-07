@@ -9,7 +9,7 @@ namespace CulinaryBlog.Application.Tests;
 public class RecipeStartupPostgresTests
 {
     [PostgresFact]
-    public async Task Fresh_database_starts_api_and_assigns_author_to_seed_recipes()
+    public async Task Startup_seeds_recipes_repairs_content_and_does_not_reseed_soft_deleted_recipes()
     {
         var database = "recipe_startup_test_" + Guid.NewGuid().ToString("N");
         var adminConnection = Environment.GetEnvironmentVariable("SEARCH_TEST_POSTGRES")!;
@@ -48,7 +48,7 @@ public class RecipeStartupPostgresTests
             start.Environment["Logging__LogLevel__Microsoft.EntityFrameworkCore"] = "Error";
             start.Environment["Logging__LogLevel__Microsoft.AspNetCore.DataProtection"] = "None";
 
-            async Task StartAndVerifyAsync()
+            async Task StartAndVerifyAsync(long expectedDeletedRecipes = 0)
             {
                 using var api = Process.Start(start)!;
                 var output = api.StandardOutput.ReadToEndAsync();
@@ -72,6 +72,16 @@ public class RecipeStartupPostgresTests
 
                     await using var db = new NpgsqlConnection(databaseConnection);
                     await db.OpenAsync();
+                    await using var verifyRecipeCounts = new NpgsqlCommand("""
+                        SELECT count(*), count(*) FILTER (WHERE "IsDeleted") FROM "Recipes"
+                        """, db);
+                    await using (var recipeCounts = await verifyRecipeCounts.ExecuteReaderAsync())
+                    {
+                        Assert.True(await recipeCounts.ReadAsync());
+                        Assert.Equal(6L, recipeCounts.GetInt64(0));
+                        Assert.Equal(expectedDeletedRecipes, recipeCounts.GetInt64(1));
+                    }
+
                     await using var verify = new NpgsqlCommand("""
                         SELECT count(*)
                         FROM "Recipes" r
@@ -127,6 +137,13 @@ public class RecipeStartupPostgresTests
                 Assert.Equal(2, await deleteSteps.ExecuteNonQueryAsync());
 
             await StartAndVerifyAsync();
+
+            await using (var softDeleteRecipes = new NpgsqlCommand("""
+                UPDATE "Recipes" SET "IsDeleted" = true WHERE NOT "IsDeleted"
+                """, existingDb))
+                Assert.Equal(6, await softDeleteRecipes.ExecuteNonQueryAsync());
+
+            await StartAndVerifyAsync(expectedDeletedRecipes: 6);
         }
         finally
         {
