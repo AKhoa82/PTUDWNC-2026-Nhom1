@@ -115,7 +115,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         
         var slug = baseSlug;
         var counter = 1;
-        while (await _context.Recipes.AnyAsync(r => r.Slug == slug, cancellationToken))
+        while (await _context.Recipes.IgnoreQueryFilters().AnyAsync(r => r.Slug == slug, cancellationToken))
         {
             slug = $"{baseSlug}-{counter}";
             counter++;
