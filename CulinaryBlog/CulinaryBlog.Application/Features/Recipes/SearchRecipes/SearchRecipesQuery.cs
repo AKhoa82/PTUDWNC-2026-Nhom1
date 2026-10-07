@@ -7,7 +7,15 @@ using MediatR;
 
 namespace CulinaryBlog.Application.Features.Recipes.SearchRecipes;
 
-public record SearchRecipesQuery(string? SearchTerm, int Page = 1, int PageSize = 12)
+public record SearchRecipesQuery(
+    string? SearchTerm,
+    int Page = 1,
+    int PageSize = 12,
+    Guid? CategoryId = null,
+    string? Difficulty = null,
+    int? MaxCookTime = null,
+    int? MinServings = null,
+    string? Sort = null)
     : IRequest<PagedResult<RecipeSummaryDto>>;
 
 public static partial class RecipeSearchTerms
@@ -27,6 +35,8 @@ public sealed class SearchRecipesQueryValidator : AbstractValidator<SearchRecipe
     public SearchRecipesQueryValidator()
     {
         RuleFor(q => q.SearchTerm)
+            .NotNull()
+            .WithMessage("Từ khóa tìm kiếm là bắt buộc.")
             .Must(term => term?.Trim().Length >= 2)
             .WithMessage("Từ khóa tìm kiếm phải có ít nhất 2 ký tự.")
             .Must(term => !string.IsNullOrEmpty(RecipeSearchTerms.ToPrefixQuery(term)))
@@ -34,6 +44,19 @@ public sealed class SearchRecipesQueryValidator : AbstractValidator<SearchRecipe
             .OverridePropertyName("q");
         RuleFor(q => q.Page).GreaterThanOrEqualTo(1);
         RuleFor(q => q.PageSize).InclusiveBetween(1, 50);
+
+        RuleFor(q => q.Difficulty)
+            .IsEnumName(typeof(CulinaryBlog.Domain.Entities.RecipeDifficulty), caseSensitive: false)
+            .When(q => !string.IsNullOrEmpty(q.Difficulty))
+            .WithMessage("Độ khó không hợp lệ. Chỉ chấp nhận Easy, Medium, Hard, Expert.");
+
+        RuleFor(q => q.MaxCookTime)
+            .GreaterThanOrEqualTo(0)
+            .When(q => q.MaxCookTime.HasValue);
+
+        RuleFor(q => q.MinServings)
+            .GreaterThan(0)
+            .When(q => q.MinServings.HasValue);
     }
 }
 

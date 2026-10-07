@@ -264,10 +264,13 @@ app.MapGet("/api/v1/recipes", async (
 
 app.MapGet("/api/v1/recipes/search", async (
     IMediator mediator, CancellationToken cancellationToken,
-    string? q = null, int page = 1, int pageSize = 12) =>
+    string? q = null, int page = 1, int pageSize = 12,
+    Guid? categoryId = null, string? difficulty = null,
+    int? maxCookTime = null, int? minServings = null, string? sort = null) =>
 {
     return Results.Ok(await mediator.Send(
-        new CulinaryBlog.Application.Features.Recipes.SearchRecipes.SearchRecipesQuery(q, page, pageSize),
+        new CulinaryBlog.Application.Features.Recipes.SearchRecipes.SearchRecipesQuery(
+            q, page, pageSize, categoryId, difficulty, maxCookTime, minServings, sort),
         cancellationToken));
 })
 .WithName("SearchRecipesV1")

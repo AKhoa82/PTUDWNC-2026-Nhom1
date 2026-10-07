@@ -17,10 +17,43 @@ public sealed class RecipeSearchService(ApplicationDbContext context) : IRecipeS
             .Where(r => r.Status == RecipeStatus.Published)
             .Where(r => EF.Property<NpgsqlTsVector>(r, "SearchVector")
                 .Matches(EF.Functions.ToTsQuery("public.vietnamese", terms)));
+
+        if (request.CategoryId.HasValue)
+        {
+            query = query.Where(r => r.CategoryId == request.CategoryId.Value);
+        }
+
+        if (!string.IsNullOrEmpty(request.Difficulty) && Enum.TryParse<RecipeDifficulty>(request.Difficulty, true, out var diff))
+        {
+            query = query.Where(r => r.Difficulty == diff);
+        }
+
+        if (request.MaxCookTime.HasValue)
+        {
+            query = query.Where(r => r.CookingTimeMinutes <= request.MaxCookTime.Value);
+        }
+
+        if (request.MinServings.HasValue)
+        {
+            query = query.Where(r => r.Servings >= request.MinServings.Value);
+        }
+
         var count = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(r => EF.Property<NpgsqlTsVector>(r, "SearchVector")
-                .Rank(EF.Functions.ToTsQuery("public.vietnamese", terms)))
+
+        var orderedQuery = request.Sort?.ToLowerInvariant() switch
+        {
+            "createdat" => query.OrderBy(r => r.CreatedAt),
+            "-createdat" => query.OrderByDescending(r => r.CreatedAt),
+            "title" => query.OrderBy(r => r.Title),
+            "-title" => query.OrderByDescending(r => r.Title),
+            "cooktime" => query.OrderBy(r => r.CookingTimeMinutes),
+            "-cooktime" => query.OrderByDescending(r => r.CookingTimeMinutes),
+            "publishedat" => query.OrderBy(r => r.PublishedAt),
+            "-publishedat" => query.OrderByDescending(r => r.PublishedAt),
+            _ => query.OrderByDescending(r => EF.Property<NpgsqlTsVector>(r, "SearchVector").Rank(EF.Functions.ToTsQuery("public.vietnamese", terms)))
+        };
+
+        var items = await orderedQuery
             .ThenBy(r => r.Id)
             .Skip((int)Math.Min((long)(request.Page - 1) * request.PageSize, int.MaxValue))
             .Take(request.PageSize)
@@ -35,6 +68,7 @@ public sealed class RecipeSearchService(ApplicationDbContext context) : IRecipeS
                 RelevanceScore = EF.Property<NpgsqlTsVector>(r, "SearchVector")
                     .Rank(EF.Functions.ToTsQuery("public.vietnamese", terms))
             }).ToListAsync(cancellationToken);
+
         return new PagedResult<RecipeSummaryDto>
         {
             Items = items, TotalCount = count, Page = request.Page, PageSize = request.PageSize,
