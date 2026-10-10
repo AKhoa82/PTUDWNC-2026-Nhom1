@@ -1,6 +1,10 @@
+using CulinaryBlog.Domain.Entities;
 using MediatR;
 using CulinaryBlog.Application.Contracts.Persistence;
 using Microsoft.EntityFrameworkCore;
+using CulinaryBlog.Application.Common.Exceptions;
+using CulinaryBlog.Application.Features.Recipes;
+using CulinaryBlog.Domain.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Steps;
 
@@ -16,27 +20,34 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
 
     public async Task Handle(DeleteRecipeStepCommand request, CancellationToken cancellationToken)
     {
+        await using var transaction = await RecipeMutationTransaction.BeginAsync(
+            _context, request.RecipeId, cancellationToken);
+
         var recipe = await _context.Recipes
             .Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Id == request.RecipeId, cancellationToken);
 
         if (recipe == null)
         {
-            throw new InvalidOperationException("Recipe không tồn tại.");
+            throw new NotFoundException("Recipe không tồn tại.");
         }
 
-        var isOwner = recipe.AuthorId == request.AuthorId;
+        var isOwner = Guid.TryParse(request.AuthorId, out var parsedUserId) && recipe.AuthorId == parsedUserId;
 
         if (!isOwner && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền xoá bước thực hiện của công thức này.");
+            throw new ForbiddenException("Bạn không có quyền xoá bước thực hiện của công thức này.");
         }
 
         var stepToRemove = recipe.Steps.FirstOrDefault(s => s.Id == request.StepId);
         if (stepToRemove == null)
         {
-            throw new InvalidOperationException("Bước thực hiện không tồn tại.");
+            throw new NotFoundException("Bước thực hiện không tồn tại.");
         }
+
+        if (recipe.Status == RecipeStatus.Published &&
+            await _context.RecipeSteps.CountAsync(step => step.RecipeId == request.RecipeId, cancellationToken) <= 1)
+            throw new DomainException("Recipe đã xuất bản phải có ít nhất 1 bước thực hiện.");
 
         int deletedStepNumber = stepToRemove.StepNumber;
         
@@ -48,11 +59,35 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
             .OrderBy(s => s.StepNumber)
             .ToList();
 
-        foreach (var step in remainingSteps)
+        if (remainingSteps.Count == 0)
         {
-            step.StepNumber -= 1;
+            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
+            await _context.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
+            return;
         }
 
+        var maxStepNumber = recipe.Steps.Max(s => s.StepNumber);
+        var offset = maxStepNumber + 1;
+
+        // Phase 1: Shift to a safe high range to avoid UNIQUE constraint conflicts.
+        foreach (var step in remainingSteps)
+        {
+            step.StepNumber += offset;
+        }
         await _context.SaveChangesAsync(cancellationToken);
+
+        // Phase 2: Shift back to correct numbers.
+        foreach (var step in remainingSteps)
+        {
+            step.StepNumber -= (offset + 1);
+        }
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
+        await _context.SaveChangesAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
     }
 }
+
+

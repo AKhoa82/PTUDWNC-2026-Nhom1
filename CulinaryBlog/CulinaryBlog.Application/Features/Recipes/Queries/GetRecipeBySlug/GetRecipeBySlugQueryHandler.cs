@@ -22,21 +22,26 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             .Include(r => r.Category)
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
+            .Include(r => r.Images)
+            .Include(r => r.Author)
             .FirstOrDefaultAsync(r => r.Slug == request.Slug, cancellationToken);
 
         if (recipe is null)
         {
-            return null;
+            throw new CulinaryBlog.Application.Common.Exceptions.NotFoundException("Không tìm thấy công thức này.");
         }
 
         if (recipe.Status != RecipeStatus.Published)
         {
-            if (!request.IsAdmin && recipe.AuthorId != request.CurrentUserId)
+            if (!request.IsAdmin)
             {
-                throw new UnauthorizedAccessException("Không có quyền xem công thức chưa xuất bản.");
+                if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId) || recipe.AuthorId != parsedUserId)
+                {
+                    throw new CulinaryBlog.Application.Common.Exceptions.ForbiddenException("Không có quyền xem công thức chưa xuất bản.");
+                }
             }
         }
-
+        
         return new RecipeDetailDto
         {
             Id = recipe.Id,
@@ -53,9 +58,25 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
             CategoryId = recipe.CategoryId,
             CategoryName = recipe.Category?.Name ?? string.Empty,
             AuthorId = recipe.AuthorId,
+            Author = recipe.Author != null ? new AuthorDto
+            {
+                Id = recipe.Author.Id,
+                UserName = recipe.Author.UserName ?? string.Empty,
+                FullName = recipe.Author.FullName ?? string.Empty
+            } : null,
+            Nutrition = recipe.Nutrition != null ? new RecipeNutritionDto
+            {
+                Calories = recipe.Nutrition.Calories,
+                Protein = recipe.Nutrition.Protein,
+                Carbs = recipe.Nutrition.Carbs,
+                Fat = recipe.Nutrition.Fat,
+                Fiber = recipe.Nutrition.Fiber,
+                Sodium = recipe.Nutrition.Sodium
+            } : null,
             CreatedAt = recipe.CreatedAt,
             UpdatedAt = recipe.UpdatedAt,
             PublishedAt = recipe.PublishedAt,
+            RowVersion = recipe.RowVersion.ToString(),
 
             Ingredients = recipe.Ingredients
                 .OrderBy(i => i.SortOrder)
@@ -79,7 +100,15 @@ public class GetRecipeBySlugQueryHandler : IRequestHandler<GetRecipeBySlugQuery,
                     Description = s.Description,
                     DurationMinutes = s.DurationMinutes,
                     ImageUrl = s.ImageUrl
-                }).ToList()
+                }).ToList(),
+
+            Images = recipe.Images
+                .OrderBy(image => image.OrderIndex)
+                .ThenBy(image => image.Id)
+                .Select(image => new RecipeImageDto(
+                    image.Id, image.OriginalUrl, image.MediumUrl, image.ThumbnailUrl,
+                    image.AltText, image.IsPrimary, image.OrderIndex))
+                .ToList()
         };
     }
 }

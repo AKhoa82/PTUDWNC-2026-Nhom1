@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
@@ -6,6 +7,8 @@ using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CulinaryBlog.Application.Features.Recipes.GetRecipes;
 
@@ -13,29 +16,54 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 {
     private readonly IApplicationDbContext _context;
     private readonly IDistributedCache _cache;
+    private readonly ILogger<GetRecipesQueryHandler> _logger;
 
     public const string CacheKeyPrefix = "recipes:list:";
+    public const string CacheVersionKey = "recipes:list:version";
 
-    public GetRecipesQueryHandler(IApplicationDbContext context, IDistributedCache cache)
+    public GetRecipesQueryHandler(IApplicationDbContext context, IDistributedCache cache,
+        ILogger<GetRecipesQueryHandler>? logger = null)
     {
         _context = context;
         _cache = cache;
+        _logger = logger ?? NullLogger<GetRecipesQueryHandler>.Instance;
     }
 
     public async Task<PagedResult<RecipeSummaryDto>> Handle(
         GetRecipesQuery request,
         CancellationToken cancellationToken)
     {
+        // Validation is owned by the MediatR ValidationBehavior.
+        // Normalize once so ordering and cache identity have identical semantics.
+        request = request with { Sort = NormalizeSort(request.Sort) };
+        // Parse raw difficulty string into enum if provided and valid.
+        var difficulty = request.Difficulty;
+        if (!string.IsNullOrWhiteSpace(request.DifficultyRaw))
+        {
+            if (Enum.TryParse<CulinaryBlog.Domain.Entities.RecipeDifficulty>(request.DifficultyRaw, true, out var diffEnum))
+                difficulty = diffEnum;
+        }
+        request = request with { Difficulty = difficulty };
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
-        var cacheKey = BuildCacheKey(request);
+        var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
+        shouldCache &= version is not null;
+        var cacheKey = $"{BuildCacheKey(request)}:v{version}";
         
         if (shouldCache)
         {
-            var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
-            if (!string.IsNullOrEmpty(cachedJson))
+            try
             {
-                var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
-                if (cached is not null) return cached;
+                var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
+                if (!string.IsNullOrEmpty(cachedJson))
+                {
+                    var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
+                    if (cached is not null) return cached;
+                }
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(exception, "Recipe list cache read failed; querying the database.");
+                shouldCache = false;
             }
         }
 
@@ -48,9 +76,10 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         {
             if (!string.IsNullOrEmpty(request.CurrentUserId))
             {
+                var isParsed = Guid.TryParse(request.CurrentUserId, out var parsedCurrentUserId);
                 query = query.Where(r =>
                     r.Status == RecipeStatus.Published ||
-                    (r.Status != RecipeStatus.Published && r.AuthorId == request.CurrentUserId));
+                    (r.Status != RecipeStatus.Published && isParsed && r.AuthorId == parsedCurrentUserId));
             }
             else
             {
@@ -75,9 +104,12 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         if (request.MaxCookTime.HasValue)
             query = query.Where(r => r.CookingTimeMinutes <= request.MaxCookTime.Value);
 
+        if (request.MinServings.HasValue)
+            query = query.Where(r => r.Servings >= request.MinServings.Value);
+
         var totalCount = await query.CountAsync(cancellationToken);
 
-        query = request.Sort switch
+        var orderedQuery = request.Sort switch
         {
             "createdAt"    => query.OrderBy(r => r.CreatedAt),
             "-createdAt"   => query.OrderByDescending(r => r.CreatedAt),
@@ -90,9 +122,12 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             _              => query.OrderByDescending(r => r.CreatedAt)
         };
 
-        var skip = (request.Page - 1) * request.PageSize;
+        // A unique tie-breaker keeps equal sort values on consistent pages.
+        // CountAsync returns an int, so offsets above int.MaxValue are always empty.
+        var skip = (int)Math.Min((long)(request.Page - 1) * request.PageSize, int.MaxValue);
 
-        var items = await query
+        var items = await orderedQuery
+            .ThenBy(r => r.Id)
             .Skip(skip)
             .Take(request.PageSize)
             .Select(r => new RecipeSummaryDto
@@ -109,7 +144,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
                 Status             = r.Status.ToString(),
                 CategoryId         = r.CategoryId,
                 CategoryName       = r.Category.Name,
-                AuthorId           = r.AuthorId,
+                AuthorId = r.AuthorId,
                 CreatedAt          = r.CreatedAt,
                 UpdatedAt          = r.UpdatedAt,
                 PublishedAt        = r.PublishedAt
@@ -124,11 +159,18 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             {
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
             };
-            await _cache.SetStringAsync(
-                cacheKey,
-                JsonSerializer.Serialize(result),
-                cacheOptions,
-                cancellationToken);
+            try
+            {
+                await _cache.SetStringAsync(
+                    cacheKey,
+                    JsonSerializer.Serialize(result),
+                    cacheOptions,
+                    cancellationToken);
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(exception, "Recipe list cache write failed; returning database results.");
+            }
         }
 
         return result;
@@ -136,18 +178,21 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
     private static string BuildCacheKey(GetRecipesQuery q)
     {
-        var userId = q.IsAdmin ? "admin"
-            : !string.IsNullOrEmpty(q.CurrentUserId) ? $"u:{q.CurrentUserId}"
-            : "anon";
-
-        return $"{CacheKeyPrefix}p{q.Page}_ps{q.PageSize}" +
-               $"_kw{q.Keyword}" +
-               $"_cid{q.CategoryId}" +
-               $"_{q.Difficulty}" +
-               $"_max{q.MaxCookTime}" +
-               $"_{q.Sort}" +
-               $"_{userId}";
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            q.Page, q.PageSize, q.Keyword, q.CategoryId, q.Difficulty,
+            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin
+        });
+        // Version the format so legacy concatenated keys are never reused.
+        return $"{CacheKeyPrefix}v2:{Convert.ToHexString(SHA256.HashData(payload))}";
     }
+
+    private static string NormalizeSort(string? sort) => sort?.Trim() switch
+    {
+        "createdAt" or "-createdAt" or "title" or "-title" or
+        "cookTime" or "-cookTime" or "publishedAt" or "-publishedAt" => sort.Trim(),
+        _ => "-createdAt"
+    };
 
     public static string GetCacheKeyPrefix() => CacheKeyPrefix;
 }

@@ -32,14 +32,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       });
 
       const result = await response.json().catch(() => null) as
-        | { message?: string; user?: AuthResponse }
+        | (Partial<AuthResponse> & { message?: string })
         | null;
 
-      if (!response.ok || !result?.user) {
+      if (!response.ok || !result?.accessToken || !result?.refreshToken) {
         throw new Error(result?.message ?? "The API could not complete Google sign-in.");
       }
 
-      token.backendAuth = result.user;
+      token.backendAuth = result as AuthResponse;
       return token;
     },
     async session({ session, token }) {

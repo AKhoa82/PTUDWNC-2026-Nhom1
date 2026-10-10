@@ -1,11 +1,29 @@
-﻿namespace CulinaryBlog.Domain.Entities;
+using CulinaryBlog.Domain.Common;
 
-public class Category
+namespace CulinaryBlog.Domain.Entities;
+
+public class Category : AuditableEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
     public ICollection<Recipe> Recipes { get; set; } = new List<Recipe>();
+
+    // Đổi từ protected sang public
+    public Category() { }
+
+    public Category(string name, string slug, string? description)
+    {
+        Name = name;
+        Slug = slug;
+        Description = description;
+    }
+
+    public void Update(string name, string slug, string? description)
+    {
+        Name = name;
+        Slug = slug;
+        Description = description;
+    }
 }

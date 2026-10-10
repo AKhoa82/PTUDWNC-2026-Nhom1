@@ -3,6 +3,7 @@ using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using CulinaryBlog.Application.Common.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Steps;
 
@@ -24,14 +25,14 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
 
         if (recipe == null)
         {
-            throw new InvalidOperationException("Recipe không tồn tại.");
+            throw new NotFoundException("Recipe không tồn tại.");
         }
 
-        var isOwner = recipe.AuthorId == request.AuthorId;
+        var isOwner = Guid.TryParse(request.AuthorId, out var parsedUserId) && recipe.AuthorId == parsedUserId;
 
         if (!isOwner && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền thêm bước thực hiện cho công thức này.");
+            throw new ForbiddenException("Bạn không có quyền thêm bước thực hiện cho công thức này.");
         }
 
         int nextStepNumber = 1;
@@ -50,7 +51,8 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
         );
 
         recipe.Steps.Add(step);
-        
+        _context.RecipeSteps.Add(step);
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RecipeStepDto
@@ -64,3 +66,4 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
         };
     }
 }
+

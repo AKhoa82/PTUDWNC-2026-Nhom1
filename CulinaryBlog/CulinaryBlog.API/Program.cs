@@ -1,10 +1,12 @@
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.API.Endpoints;
+using CulinaryBlog.API.Infrastructure;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Common.Behaviors;
 using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Infrastructure.Security;
@@ -22,19 +24,42 @@ using Npgsql;
 using Scalar.AspNetCore;
 using System.ComponentModel.DataAnnotations;
 using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Application.Common.Models;
+using CulinaryBlog.Infrastructure;
+using CulinaryBlog.Infrastructure.Jobs;
+using Hangfire;
+using Microsoft.AspNetCore.RateLimiting;
 
-var builder = WebApplication.CreateBuilder(args);
+if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
+    (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
+    throw new ArgumentException("Use either --storage-backfill [--apply] or --storage-inventory.");
+var builder = WebApplication.CreateBuilder(args.Where(arg => arg is not ("--storage-backfill" or "--storage-inventory" or "--apply")).ToArray());
 
-builder.Services.AddCors(options =>
+if (args.Contains("--storage-backfill") || args.Contains("--storage-inventory"))
 {
-    options.AddPolicy("Frontend", policy =>
-    {
-        policy
-            .WithOrigins("http://localhost:3000", "http://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
+    // Maintenance mode starts neither HTTP endpoints nor background workers.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+    builder.Services.AddDbContext<ApplicationDbContext>(o => o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    builder.Services.AddInfrastructureServices(builder.Configuration);
+    await using var maintenanceHost = builder.Build();
+    using var maintenanceScope = maintenanceHost.Services.CreateScope();
+    var maintenance = maintenanceScope.ServiceProvider.GetRequiredService<CulinaryBlog.Infrastructure.Services.StorageMaintenanceService>();
+    if (args.Contains("--storage-backfill"))
+        await maintenance.BackfillAsync(args.Contains("--apply"), Console.Out, CancellationToken.None);
+    else await maintenance.InventoryAsync(Console.Out, CancellationToken.None);
+    return;
+}
+
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException("Configure Jwt:Key (at least 32 UTF-8 bytes) using User Secrets or Jwt__Key.");
+
+// Console logging remains available when the Windows Event Log is not writable.
+if (OperatingSystem.IsWindows())
+    builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>((_, _) => false);
+
+builder.Services.AddFrontendCors(builder.Configuration);
 builder.Services.AddHttpClient();
 builder.Services.AddDataProtection();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -43,15 +68,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-                builder.Configuration["Jwt:Key"]!)),
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AuthorPolicy", policy => policy.RequireRole("Author", "Admin"));
+    options.AddPolicy("AdminPolicy", policy => policy.RequireRole("Admin"));
+});
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -69,24 +97,80 @@ builder.Services.AddIdentityCore<User>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterCommand).Assembly);
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(RegisterCommand).Assembly);
+    cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
     cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 });
 
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
-    options.InstanceName = "CulinaryBlog:";
+    options.InstanceName = builder.Configuration["Cache:InstancePrefix"] ?? "CulinaryBlog:";
+});
+builder.Services.AddStackExchangeRedisOutputCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis");
+    options.InstanceName = (builder.Configuration["Cache:InstancePrefix"] ?? "CulinaryBlog:") + "output:";
 });
 builder.Services.AddOutputCache(options =>
 {
     options.AddPolicy("RecipeDetail", builder => 
-        builder.Expire(TimeSpan.FromMinutes(60)).Tag("recipes"));
+        builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeDetailCachePolicy>());
 });
-builder.Services.AddOpenApi();
+builder.Services.AddInfrastructureServices(builder.Configuration);
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
+builder.Services.AddRecipeImageFeature();
+builder.Services.AddRateLimiter(options =>
+    options.AddPolicy<string, AuthRateLimitPolicy>(AuthRateLimitPolicy.Name));
+builder.Services.AddControllers();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Components ??= new Microsoft.OpenApi.Models.OpenApiComponents();
+        document.Components.SecuritySchemes.Add("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+        {
+            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            Description = "Nhập JWT Token vào đây"
+        });
+
+        return Task.CompletedTask;
+    });
+
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        var metadata = context.Description.ActionDescriptor.EndpointMetadata;
+        var allowAnonymous = metadata.OfType<Microsoft.AspNetCore.Authorization.IAllowAnonymous>().Any();
+        var authorize = metadata.OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>().Any();
+
+        if (authorize && !allowAnonymous)
+        {
+            operation.Security.Add(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+            {
+                {
+                    new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                    {
+                        Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                        {
+                            Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    Array.Empty<string>()
+                }
+            });
+        }
+        return Task.CompletedTask;
+    });
+});
 
 var app = builder.Build();
 
@@ -96,15 +180,28 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.UseCors("Frontend");
+app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
+app.UseRecipeImageRequestLimits();
 app.UseOutputCache();
 
 app.MapAuthEndpoints();
+app.MapRecipeImageEndpoints();
 app.MapRecipeIngredientEndpoints();
 app.MapRecipeStepEndpoints();
+app.MapRecipeEndpoints();
+
+if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
+{
+    app.MapHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = []
+    }).RequireAuthorization("AdminPolicy");
+}
 
 app.MapGet("/api/v1/categories", async (
     IMediator mediator,
@@ -117,16 +214,13 @@ app.MapGet("/api/v1/categories", async (
 .WithSummary("Lấy danh sách danh mục (CQRS + Redis Cache, TTL 60 phút)")
 .AllowAnonymous();
 
-app.MapGet("/api/categories/{slug}", async (
+app.MapGet("/api/v1/categories/{slug}", async (
     string slug,
     IMediator mediator,
     CancellationToken cancellationToken) =>
 {
     var result = await mediator.Send(new GetCategoryBySlugQuery(slug), cancellationToken);
-
-    return result is not null
-        ? Results.Ok(result)
-        : Results.NotFound(new { message = $"Không tìm thấy danh mục với slug: '{slug}'" });
+    return Results.Ok(result);
 })
 .WithName("GetCategoryBySlug")
 .WithSummary("Lấy thông tin chi tiết danh mục và danh sách công thức thuộc danh mục");
@@ -142,32 +236,15 @@ app.MapGet("/api/v1/recipes", async (
     Guid? categoryId = null,
     string? difficulty = null,
     int? maxCookTime = null,
+    int? minServings = null,
     string sort = "-createdAt") =>
 {
-    if (page < 1 || pageSize < 1 || pageSize > 50)
-    {
-        return Results.Problem(
-            detail: "page phải >= 1, pageSize phải trong khoảng [1, 50].",
-            statusCode: 422,
-            title: "Tham số không hợp lệ.");
-    }
 
-    RecipeDifficulty? parsedDifficulty = null;
-    if (!string.IsNullOrEmpty(difficulty))
-    {
-        if (!Enum.TryParse<RecipeDifficulty>(difficulty, ignoreCase: true, out var diffEnum))
-        {
-            return Results.Problem(
-                detail: "difficulty phải là một trong: Easy, Medium, Hard, Expert.",
-                statusCode: 422,
-                title: "Tham số không hợp lệ.");
-        }
-        parsedDifficulty = diffEnum;
-    }
+        // Difficulty validation moved to GetRecipesQueryValidator; raw value handled in handler.
 
     string? currentUserId = null;
     bool isAdmin = false;
-    
+
     if (user?.Identity?.IsAuthenticated == true)
     {
         currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -179,8 +256,9 @@ app.MapGet("/api/v1/recipes", async (
         PageSize: pageSize,
         Keyword: keyword?.Trim(),
         CategoryId: categoryId,
-        Difficulty: parsedDifficulty,
+        DifficultyRaw: difficulty,
         MaxCookTime: maxCookTime,
+        MinServings: minServings,
         Sort: sort,
         CurrentUserId: currentUserId,
         IsAdmin: isAdmin
@@ -190,7 +268,27 @@ app.MapGet("/api/v1/recipes", async (
     return Results.Ok(result);
 })
 .WithName("GetRecipesV1")
-.WithSummary("FR-RCP-001 – Danh sách công thức (phân trang, lọc, sắp xếp, Redis Cache TTL 15 phút)")
+.WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt. Giá trị rỗng hoặc không hỗ trợ dùng mặc định. Sắp xếp trước phân trang, dùng Id tăng dần khi trùng giá trị.")
+.WithSummary("Danh sách công thức")
+.Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.AllowAnonymous();
+
+app.MapGet("/api/v1/recipes/search", async (
+    IMediator mediator, CancellationToken cancellationToken,
+    string? q = null, int page = 1, int pageSize = 12,
+    Guid? categoryId = null, string? difficulty = null,
+    int? maxCookTime = null, int? minServings = null, string? sort = null) =>
+{
+    return Results.Ok(await mediator.Send(
+        new CulinaryBlog.Application.Features.Recipes.SearchRecipes.SearchRecipesQuery(
+            q, page, pageSize, categoryId, difficulty, maxCookTime, minServings, sort),
+        cancellationToken));
+})
+.WithName("SearchRecipesV1")
+.WithSummary("Tìm kiếm toàn văn")
+.Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
 .AllowAnonymous();
 
 app.MapGet("/api/v1/recipes/{slug}", async (
@@ -199,29 +297,23 @@ app.MapGet("/api/v1/recipes/{slug}", async (
     System.Security.Claims.ClaimsPrincipal user,
     CancellationToken cancellationToken) =>
 {
-    try
+    string? currentUserId = null;
+    bool isAdmin = false;
+    if (user?.Identity?.IsAuthenticated == true)
     {
-        string? currentUserId = null;
-        bool isAdmin = false;
-        if (user?.Identity?.IsAuthenticated == true)
-        {
-            currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            isAdmin = user.IsInRole("Admin");
-        }
-
-        var result = await mediator.Send(new GetRecipeBySlugQuery(slug, currentUserId, isAdmin), cancellationToken);
-
-        return result is not null 
-            ? Results.Ok(result) 
-            : Results.NotFound(new { message = "Không tìm thấy công thức này." });
+        currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        isAdmin = user.IsInRole("Admin");
     }
-    catch (UnauthorizedAccessException ex)
-    {
-        return Results.Problem(statusCode: 403, detail: ex.Message);
-    }
+
+    var result = await mediator.Send(new GetRecipeBySlugQuery(slug, currentUserId, isAdmin), cancellationToken);
+
+    return Results.Ok(result);
 })
 .WithName("GetRecipeBySlugV1")
-.WithSummary("FR-RCP-002 – Xem chi tiết công thức")
+.WithSummary("Xem chi tiết công thức")
+.Produces<RecipeDetailDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status404NotFound)
 .CacheOutput("RecipeDetail")
 .AllowAnonymous();
 
@@ -229,63 +321,81 @@ app.MapPost("/api/v1/recipes", async (
     CreateRecipeRequest request,
     IMediator mediator,
     System.Security.Claims.ClaimsPrincipal user,
-    Microsoft.AspNetCore.OutputCaching.IOutputCacheStore cacheStore,
+    RecipeImageCacheInvalidator cacheStore,
     CancellationToken cancellationToken) =>
 {
-    var validationResults = new List<ValidationResult>();
-    var validationContext = new ValidationContext(request);
-
-    if (!Validator.TryValidateObject(
-        request,
-        validationContext,
-        validationResults,
-        validateAllProperties: true))
-    {
-        var errors = validationResults
-            .GroupBy(
-                result => result.MemberNames.FirstOrDefault() ?? string.Empty,
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(result => result.ErrorMessage ?? "Giá trị không hợp lệ.").ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-            
-        return Results.ValidationProblem(errors, statusCode: 422);
-    }
+    // Validation handled by CreateRecipeCommandValidator (FluentValidation)
     
-    try
+    string? authorId = null;
+    if (user?.Identity?.IsAuthenticated == true)
     {
-        string? authorId = null;
-        if (user?.Identity?.IsAuthenticated == true)
-        {
-            authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        }
-
-        var recipeId = await mediator.Send(
-            new CreateRecipeCommand(request, authorId),
-            cancellationToken);
-
-        await cacheStore.EvictByTagAsync("recipes", cancellationToken);
-
-        return Results.Created($"/api/v1/recipes/{recipeId}", new
-        {
-            message = "Tạo công thức thành công.",
-            id = recipeId
-        });
+        authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     }
-    catch (InvalidOperationException ex)
-    {
-        return Results.BadRequest(new { message = ex.Message });
-    }
+
+    var recipe = await mediator.Send(
+        new CreateRecipeCommand(request, authorId),
+        cancellationToken);
+
+    await cacheStore.InvalidateAsync(recipe.Slug, cancellationToken);
+
+    return Results.Created($"/api/v1/recipes/{recipe.Slug}", recipe);
 })
 .WithName("CreateRecipeV1")
-.WithSummary("FR-RCP-003 – Tạo công thức nấu ăn mới");
+.Produces<RecipeDto>(StatusCodes.Status201Created)
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status409Conflict)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.RequireAuthorization("AuthorPolicy")
+.WithSummary("Tạo công thức");
+
+app.MapPut("/api/v1/recipes/{id:guid}", async (
+    Guid id,
+    CulinaryBlog.Application.DTOs.UpdateRecipeRequest request,
+    IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
+    RecipeImageCacheInvalidator cacheStore,
+    CancellationToken cancellationToken) =>
+{
+    string? currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrEmpty(currentUserId)) throw new UnauthorizedAccessException("Token không có user ID.");
+
+    bool isAdmin = user.IsInRole("Admin");
+
+    var result = await mediator.Send(
+        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin),
+        cancellationToken);
+
+    await cacheStore.InvalidateAsync(result.Slug, cancellationToken);
+
+    return Results.Ok(result);
+})
+.WithName("UpdateRecipeV1")
+.RequireAuthorization("AuthorPolicy")
+.Produces<RecipeDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status404NotFound)
+.ProducesProblem(StatusCodes.Status409Conflict)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.WithSummary("Cập nhật công thức");
 
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
     await dbContext.Database.MigrateAsync();
+
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+    foreach (var roleName in new[] { "Author", "Admin" })
+    {
+        if (!await roleManager.RoleExistsAsync(roleName))
+        {
+            var result = await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
+            if (!result.Succeeded && !await roleManager.RoleExistsAsync(roleName))
+                throw new InvalidOperationException($"Could not initialize role {roleName}.");
+        }
+    }
 
     if (!await dbContext.Categories.AnyAsync())
     {
@@ -297,13 +407,38 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 
-    if (!await dbContext.Recipes.AnyAsync())
+    const string sampleAuthorUserName = "sample-recipe-author";
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+
+    if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
+        var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+        if (sampleAuthor is null)
+        {
+            sampleAuthor = new User
+            {
+                UserName = sampleAuthorUserName,
+                Email = "sample-recipe-author@culinaryblog.local",
+                FullName = "Tác giả công thức mẫu"
+            };
+            var createResult = await userManager.CreateAsync(sampleAuthor);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create sample recipe author: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+        }
+
+        if (!await userManager.IsInRoleAsync(sampleAuthor, "Author"))
+        {
+            var roleResult = await userManager.AddToRoleAsync(sampleAuthor, "Author");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign Author role to sample recipe author: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+
         var monVietId = Guid.Parse("11111111-0000-0000-0000-000000000001");
         var monAId    = Guid.Parse("11111111-0000-0000-0000-000000000002");
         var monAuId   = Guid.Parse("11111111-0000-0000-0000-000000000003");
 
-        dbContext.Recipes.AddRange(
+        var sampleRecipes = new[]
+        {
             new Recipe
             {
                 Title              = "Phở Bò Hà Nội",
@@ -316,6 +451,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Hard,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -330,6 +466,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -344,6 +481,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Easy,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -358,6 +496,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Expert,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -372,6 +511,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -386,12 +526,40 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             }
-        );
+        };
+
+        foreach (var recipe in sampleRecipes)
+            SampleRecipeContent.Ensure(recipe);
+
+        dbContext.Recipes.AddRange(sampleRecipes);
 
         await dbContext.SaveChangesAsync();
     }
+
+    var existingSampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+    if (existingSampleAuthor is not null)
+    {
+        var existingSampleRecipes = await dbContext.Recipes
+            .Where(recipe => recipe.AuthorId == existingSampleAuthor.Id)
+            .Include(recipe => recipe.Ingredients)
+            .Include(recipe => recipe.Steps)
+            .ToListAsync();
+        var hasMissingContent = false;
+        foreach (var recipe in existingSampleRecipes)
+            hasMissingContent |= SampleRecipeContent.Ensure(recipe, dbContext);
+        if (hasMissingContent)
+            await dbContext.SaveChangesAsync();
+    }
 }
+
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletionReconciliationJob>(
+    "reconcile-file-deletions", job => job.ExecuteAsync(CancellationToken.None), "*/5 * * * *");
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
+    "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
+
+app.MapControllers();
 
 app.Run();

@@ -6,6 +6,7 @@ using MediatR;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -14,10 +15,21 @@ public static class AuthEndpoints
     public static IEndpointRouteBuilder MapAuthEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/api/auth/register", Register);
-        endpoints.MapPost("/api/auth/login", Login);
-        // Frontend uses: {apiUrl}/v1/auth/google
-        endpoints.MapPost("/api/v1/auth/google", GoogleLogin);
+        var group = endpoints.MapGroup("/api/v1/auth");
+
+        group.MapPost("/register", Register).WithSummary("FR-AUTH-001: Đăng ký tài khoản");
+        group.MapPost("/login", Login).WithSummary("FR-AUTH-002: Đăng nhập");
+        group.MapPost("/google", GoogleLogin)
+            .RequireRateLimiting(AuthRateLimitPolicy.Name)
+            .WithSummary("FR-AUTH-003: Đăng nhập bằng Google")
+            .AllowAnonymous()
+            .Produces<AuthResponseDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status502BadGateway);
 
         return endpoints;
     }
@@ -27,39 +39,11 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var response = await mediator.Send(
-                new LoginCommand(request),
-                cancellationToken);
+        var response = await mediator.Send(
+            new LoginCommand(request),
+            cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng nhập thành công.",
-                user = response
-            });
-        }
-        catch (AccountLockedException)
-        {
-            return Results.StatusCode(StatusCodes.Status423Locked);
-        }
-        catch (ValidationException ex)
-        {
-            return Results.ValidationProblem(ex.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Results.Unauthorized();
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.Problem(
-                title: "Database unavailable",
-                detail: "Không thể kết nối đến cơ sở dữ liệu. Vui lòng thử lại sau.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
+        return Results.Ok(response);
     }
 
     private static async Task<IResult> GoogleLogin(
@@ -67,30 +51,29 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.IdToken))
-            return Results.BadRequest(new { message = "Thiếu Google ID token." });
-
         try
         {
             var response = await mediator.Send(
                 new GoogleLoginCommand(request.IdToken),
                 cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng nhập Google thành công.",
-                user = response
-            });
+            return Results.Ok(response);
         }
         catch (UnauthorizedAccessException ex)
         {
-            return Results.Json(
-                new { message = ex.Message },
+            return Results.Problem(
+                type: "about:blank",
+                title: "Unauthorized",
+                detail: ex.Message,
                 statusCode: StatusCodes.Status401Unauthorized);
         }
-        catch (InvalidOperationException ex)
+        catch (GoogleProfileException ex)
         {
-            return Results.BadRequest(new { message = ex.Message });
+            return Results.Problem(
+                type: "about:blank",
+                title: "Bad Request",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest);
         }
         catch (HttpRequestException)
         {
@@ -105,32 +88,10 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var userId = await mediator.Send(
-                new RegisterCommand(request),
-                cancellationToken);
+        var response = await mediator.Send(
+            new RegisterCommand(request),
+            cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng ký thành công.",
-                userId
-            });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new
-            {
-                message = ex.Message
-            });
-        }
-        catch (DbUpdateException ex) when (
-            ex.InnerException is PostgresException { SqlState: "23505" })
-        {
-            return Results.Conflict(new
-            {
-                message = "Email hoặc tên định danh đã được sử dụng."
-            });
-        }
+        return Results.Created(string.Empty, response);
     }
 }

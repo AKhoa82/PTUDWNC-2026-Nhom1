@@ -1,6 +1,6 @@
 export interface AuthResponse {
   id: string;
-  userName: string;
+  username: string;
   fullName: string;
   email: string;
   accessToken: string;

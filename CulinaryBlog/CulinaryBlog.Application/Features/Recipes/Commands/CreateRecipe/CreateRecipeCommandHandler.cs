@@ -1,14 +1,17 @@
 using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Domain.Entities;
+using Mapster;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using System.Text.RegularExpressions;
+using Npgsql;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 
-public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, Guid>
+public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, RecipeDto>
 {
     private readonly IApplicationDbContext _context;
 
@@ -17,21 +20,25 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
         _context = context;
     }
 
-    public async Task<Guid> Handle(CreateRecipeCommand request, CancellationToken cancellationToken) 
+    public async Task<RecipeDto> Handle(CreateRecipeCommand request, CancellationToken cancellationToken) 
     {
-        // 1. Kiểm tra Category có tồn tại không
-        var categoryExists = await _context.Categories
-            .AnyAsync(c => c.Id == request.Request.CategoryId, cancellationToken);
+        if (!Guid.TryParse(request.AuthorId, out var actorId) || actorId == Guid.Empty)
+            throw new UnauthorizedAccessException("A valid authenticated author is required.");
+            
+        var author = await _context.Users.FirstOrDefaultAsync(x => x.Id == actorId, cancellationToken);
+        if (author == null)
+            throw new UnauthorizedAccessException("A valid authenticated author is required.");
+        
+        var category = await _context.Categories
+            .FirstOrDefaultAsync(c => c.Id == request.Request.CategoryId, cancellationToken);
 
-        if (!categoryExists)
+        if (category == null)
         {
-            throw new InvalidOperationException("Danh mục không tồn tại.");
+            throw new FluentValidation.ValidationException(new[] { new FluentValidation.Results.ValidationFailure("CategoryId", "Danh mục không tồn tại.") });
         }
 
-        // 2. Tạo Slug độc nhất
         var slug = await GenerateUniqueSlugAsync(request.Request.Title, cancellationToken);
 
-        // 3. Map dữ liệu sang Entity Recipe
         var recipe = new Recipe
         {
             Id = Guid.NewGuid(),
@@ -44,14 +51,13 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             Servings = request.Request.Servings,
             Difficulty = request.Request.Difficulty,
             Instructions = request.Request.Instructions,
-            Status = RecipeStatus.Draft, // Mặc định khi mới tạo là Draft
+            Status = RecipeStatus.Draft,
             CategoryId = request.Request.CategoryId,
-            AuthorId = request.AuthorId,
-            CreatedAt = DateTime.UtcNow,
+            Category = category,
+            AuthorId = actorId,
 
-            // MAP DANH SÁCH NGUYÊN LIỆU
             Ingredients = request.Request.Ingredients.Select(i => RecipeIngredient.Create(
-                recipeId: default, // Sẽ tự liên kết khi recipe được thêm vào DbContext
+                recipeId: default,
                 name: i.Name,
                 quantity: i.Quantity,
                 unit: i.Unit,
@@ -59,10 +65,9 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
                 sortOrder: i.SortOrder
             )).ToList(),
 
-            // MAP DANH SÁCH CÁC BƯỚC THỰC HIỆN
             Steps = request.Request.Steps.Select((s, index) => RecipeStep.Create(
                 recipeId: default,
-                stepNumber: index + 1, // Tự động đánh số thứ tự các bước từ 1
+                stepNumber: index + 1,
                 description: s.Description,
                 title: s.Title,
                 durationMinutes: s.DurationMinutes,
@@ -70,16 +75,50 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
             )).ToList()
         };
 
-        // 4. Lưu vào DB
-        _context.Recipes.Add(recipe);
-        await _context.SaveChangesAsync(cancellationToken);
+        if (request.Request.Nutrition != null)
+        {
+            recipe.SetNutrition(
+                request.Request.Nutrition.Calories,
+                request.Request.Nutrition.Protein,
+                request.Request.Nutrition.Carbs,
+                request.Request.Nutrition.Fat,
+                request.Request.Nutrition.Fiber,
+                request.Request.Nutrition.Sodium
+            );
+        }
 
-        return recipe.Id;
+        _context.Recipes.Add(recipe);
+        var cacheInvalidation = new RecipeCacheInvalidation { RecipeSlug = recipe.Slug };
+        _context.RecipeCacheInvalidations.Add(cacheInvalidation);
+
+        const int maxSaveAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                break;
+            }
+            catch (DbUpdateException exception) when (
+                attempt < maxSaveAttempts &&
+                exception.InnerException is PostgresException
+                {
+                    SqlState: "23505",
+                    ConstraintName: "IX_Recipes_Slug"
+                })
+            {
+                recipe.Slug = await GenerateUniqueSlugAsync(request.Request.Title, cancellationToken);
+                cacheInvalidation.RecipeSlug = recipe.Slug;
+            }
+        }
+
+        var result = recipe.Adapt<RecipeDto>();
+        result.RowVersion = recipe.RowVersion.ToString();
+        return result;
     }
 
     private async Task<string> GenerateUniqueSlugAsync(string title, CancellationToken cancellationToken) 
     {
-        // 1. Chuyển tiếng Việt có dấu thành không dấu
         var normalizedString = title.Normalize(NormalizationForm.FormD);
         var stringBuilder = new StringBuilder();
         foreach (var c in normalizedString)
@@ -92,14 +131,13 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
         }
         var slugWithoutAccents = stringBuilder.ToString().Normalize(NormalizationForm.FormC);
 
-        // 2. Format chuẩn slug (lowercase, bỏ ký tự đặc biệt, thay khoảng trắng bằng dấu gạch ngang)
         var baseSlug = slugWithoutAccents.ToLowerInvariant().Trim();
         baseSlug = Regex.Replace(baseSlug, @"[^a-z0-9\s-]", "");
         baseSlug = Regex.Replace(baseSlug, @"\s+", "-").Trim('-');
         
         var slug = baseSlug;
         var counter = 1;
-        while (await _context.Recipes.AnyAsync(r => r.Slug == slug, cancellationToken))
+        while (await _context.Recipes.IgnoreQueryFilters().AnyAsync(r => r.Slug == slug, cancellationToken))
         {
             slug = $"{baseSlug}-{counter}";
             counter++;
@@ -107,3 +145,4 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, G
         return slug;
     }
 }
+

@@ -4,6 +4,6 @@ namespace CulinaryBlog.Application.Contracts.Security;
 
 public interface IJwtService
 {
-    string GenerateAccessToken(User user);
+    string GenerateAccessToken(User user, IEnumerable<string>? roles = null);
     string GenerateRefreshToken();
 }

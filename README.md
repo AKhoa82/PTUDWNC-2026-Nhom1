@@ -148,4 +148,12 @@ cd CulinaryBlog
 
 - Truy cập đường dẫn: https://localhost:5001/scalar/v1 trên trình duyệt để khám phá giao diện Scalar UI và kiểm thử API
 
+## Quản lý hình ảnh công thức (FR-RCP-008)
+
+Xem [hướng dẫn cấu hình, API và kiểm thử](docs/FR-RCP-008.md). MinIO/JWT credentials được cấu hình bằng User Secrets hoặc biến môi trường. Upload và xóa ảnh thực hiện qua resource Recipe; các endpoint `/api/v1/files` tổng quát đã ngừng map.
+
+## Sắp xếp công thức (FR-SRCH-003)
+
+Trang `/recipes` hỗ trợ sắp xếp theo ngày tạo, tên và thời gian nấu theo hai chiều. Xem [quy ước API và hướng dẫn nghiệm thu](docs/FR-SRCH-003.md).
+
 © 2026 - Culinary Blog Team. All rights reserved.

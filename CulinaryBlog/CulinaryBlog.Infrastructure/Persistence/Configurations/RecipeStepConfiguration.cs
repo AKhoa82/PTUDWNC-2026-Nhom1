@@ -9,6 +9,8 @@ public class RecipeStepConfiguration : IEntityTypeConfiguration<RecipeStep>
     public void Configure(EntityTypeBuilder<RecipeStep> builder)
     {
         builder.HasKey(s => s.Id);
+        
+        builder.HasIndex(s => new { s.RecipeId, s.StepNumber }).IsUnique();
 
         builder.Property(s => s.Title)
             .HasMaxLength(200);
@@ -25,5 +27,10 @@ public class RecipeStepConfiguration : IEntityTypeConfiguration<RecipeStep>
             .WithMany(r => r.Steps)
             .HasForeignKey(s => s.RecipeId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.ToTable(tb => 
+        {
+            tb.HasCheckConstraint("CK_RecipeStep_StepNumber", "\"StepNumber\" > 0");
+        });
     }
 }

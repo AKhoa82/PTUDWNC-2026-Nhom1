@@ -16,14 +16,13 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
 
     public async Task<CategoryDetailDto?> Handle(GetCategoryBySlugQuery request, CancellationToken cancellationToken)
     {
-        var category = await _context.Categories
-            .AsNoTracking()
-            .Include(c => c.Recipes)
-            .FirstOrDefaultAsync(c => c.Slug == request.Slug, cancellationToken);
+       var category = await _context.Categories
+    .Include(c => c.Recipes) // Lấy kèm danh sách Recipes
+    .FirstOrDefaultAsync(c => c.Slug == request.Slug, cancellationToken);
 
         if (category is null)
         {
-            return null;
+            throw new CulinaryBlog.Application.Common.Exceptions.NotFoundException($"Không tìm thấy danh mục với slug: {request.Slug}");
         }
 
         return new CategoryDetailDto
@@ -46,7 +45,7 @@ public class GetCategoryBySlugQueryHandler : IRequestHandler<GetCategoryBySlugQu
                 Status             = r.Status.ToString(),
                 CategoryId         = r.CategoryId,
                 CategoryName       = category.Name,
-                AuthorId           = r.AuthorId,
+                AuthorId = r.AuthorId,
                 CreatedAt          = r.CreatedAt,
                 UpdatedAt          = r.UpdatedAt,
                 PublishedAt        = r.PublishedAt

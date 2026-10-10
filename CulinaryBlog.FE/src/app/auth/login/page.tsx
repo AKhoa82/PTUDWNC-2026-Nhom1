@@ -10,7 +10,7 @@ import { clearAuth, saveAuthResponse, type AuthResponse } from "@/lib/auth-clien
 import { signIn, signOut, useSession } from "next-auth/react";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
-const emailLoginEndpoint = `${apiUrl}/auth/login`;
+const emailLoginEndpoint = `${apiUrl.replace(/\/$/, "")}/v1/auth/login`;
 
 const loginSchema = z.object({
   email: z.string().trim().email("Email không hợp lệ."),
@@ -70,11 +70,11 @@ export default function LoginPage() {
         body: JSON.stringify(values),
       });
       const responseText = await response.text();
-      let data: { message?: string; user?: AuthResponse } = {};
+      let data: Partial<AuthResponse> & { message?: string; detail?: string } = {};
 
       if (responseText.trim()) {
         try {
-          data = JSON.parse(responseText) as { message?: string; user?: AuthResponse };
+          data = JSON.parse(responseText) as Partial<AuthResponse> & { message?: string; detail?: string };
         } catch {
           data = {};
         }
@@ -87,13 +87,13 @@ export default function LoginPage() {
             ? "Tài khoản đã bị khóa trong 15 phút do nhập sai quá nhiều lần."
           : response.status === 503
             ? "Cơ sở dữ liệu đang tạm thời không khả dụng. Vui lòng thử lại sau."
-            : data.message ?? "Đăng nhập không thành công. Vui lòng thử lại.";
+            : data.message ?? data.detail ?? "Đăng nhập không thành công. Vui lòng thử lại.";
 
         throw new Error(message);
       }
 
-      if (data.user) {
-        saveAuthResponse(data.user);
+      if (data.accessToken && data.refreshToken) {
+        saveAuthResponse(data as AuthResponse);
       }
       setSuccessMessage(data.message ?? "Đăng nhập thành công.");
     } catch (error) {

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState } from 'react';
 
@@ -16,7 +16,7 @@ export default function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('http://localhost:5018/api/categories')
+    fetch('http://localhost:5018/api/v1/categories')
       .then((res) => {
         if (!res.ok) throw new Error('Không thể tải danh sách danh mục');
         return res.json();
