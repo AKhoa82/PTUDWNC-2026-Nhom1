@@ -30,7 +30,7 @@ export default function RegisterPage() {
     setRegSuccess(false);
 
     try {
-      const response = await fetch(`${apiUrl}/auth/register`, {
+      const response = await fetch(`${apiUrl}/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -42,11 +42,19 @@ export default function RegisterPage() {
           termsAccepted: values.acceptTerms,
         }),
       });
-      const data = (await response.json()) as { message?: string; errors?: Record<string, string[]> };
+      const responseText = await response.text();
+      let data: { message?: string; errors?: Record<string, string[]>; title?: string; detail?: string } = {};
+      if (responseText.trim()) {
+        try {
+          data = JSON.parse(responseText) as typeof data;
+        } catch {
+          data = {};
+        }
+      }
       const validationMessage = data.errors ? Object.values(data.errors).flat()[0] : undefined;
 
       if (!response.ok) {
-        throw new Error(data.message ?? validationMessage ?? "Đăng ký không thành công.");
+        throw new Error(data.message ?? validationMessage ?? data.detail ?? data.title ?? "Đăng ký không thành công.");
       }
 
       setRegSuccess(true);

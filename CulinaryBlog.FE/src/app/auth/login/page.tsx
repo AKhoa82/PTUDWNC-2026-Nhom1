@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, Mail } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, LogOut, Mail } from "lucide-react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
+const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api").replace(/\/$/, "");
+const authApiUrl = `${apiUrl}/v1/auth`;
 
 const loginSchema = z.object({
   email: z.string().trim().email("Email không hợp lệ."),
@@ -19,11 +20,16 @@ type LoginFormData = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [serverError, setServerError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
+
+  useEffect(() => {
+    setIsLoggedIn(Boolean(localStorage.getItem("accessToken") && localStorage.getItem("refreshToken")));
+  }, []);
 
   const onSubmit = async (values: LoginFormData) => {
     setIsSubmitting(true);
@@ -31,7 +37,7 @@ export default function LoginPage() {
     setSuccessMessage("");
 
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
+      const response = await fetch(`${authApiUrl}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
@@ -40,6 +46,9 @@ export default function LoginPage() {
       let data: {
         message?: string;
         user?: { accessToken?: string; refreshToken?: string; accessTokenExpiresAt?: string };
+        accessToken?: string;
+        refreshToken?: string;
+        accessTokenExpiresAt?: string;
       } = {};
 
       if (responseText.trim()) {
@@ -62,17 +71,65 @@ export default function LoginPage() {
         throw new Error(message);
       }
 
-      if (data.user?.accessToken && data.user.refreshToken) {
-        localStorage.setItem("accessToken", data.user.accessToken);
-        localStorage.setItem("refreshToken", data.user.refreshToken);
-        if (data.user.accessTokenExpiresAt) {
-          localStorage.setItem("accessTokenExpiresAt", data.user.accessTokenExpiresAt);
+      const auth = data.user ?? data;
+      if (auth.accessToken && auth.refreshToken) {
+        localStorage.setItem("accessToken", auth.accessToken);
+        localStorage.setItem("refreshToken", auth.refreshToken);
+        if (auth.accessTokenExpiresAt) {
+          localStorage.setItem("accessTokenExpiresAt", auth.accessTokenExpiresAt);
         }
+        setIsLoggedIn(true);
       }
       setSuccessMessage(data.message ?? "Đăng nhập thành công.");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Không thể kết nối đến máy chủ.");
     } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onLogout = async () => {
+    setIsSubmitting(true);
+    setServerError("");
+    setSuccessMessage("");
+
+    const accessToken = localStorage.getItem("accessToken");
+    const refreshToken = localStorage.getItem("refreshToken");
+    let serverRevoked = false;
+
+    try {
+      if (refreshToken) {
+        const response = await fetch(`${authApiUrl}/logout`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({ refreshToken }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Máy chủ không thể thu hồi refresh token.");
+        }
+        serverRevoked = true;
+      }
+
+      setSuccessMessage(
+        serverRevoked
+          ? "Đăng xuất thành công. Refresh token đã được thu hồi."
+          : "Đã xóa phiên đăng nhập trên thiết bị này."
+      );
+    } catch (error) {
+      setServerError(
+        error instanceof Error
+          ? `${error.message} Phiên đăng nhập đã được xóa khỏi thiết bị này.`
+          : "Không thể thu hồi refresh token. Phiên đăng nhập đã được xóa khỏi thiết bị này."
+      );
+    } finally {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("accessTokenExpiresAt");
+      setIsLoggedIn(false);
       setIsSubmitting(false);
     }
   };
@@ -101,6 +158,17 @@ export default function LoginPage() {
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Mật khẩu *</span><span className="relative block"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type={showPassword ? "text" : "password"} placeholder="••••••••" className={`${fieldClass(Boolean(errors.password))} pl-10 pr-11`} {...register("password")} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8d958f]" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>{errors.password && <span className="mt-1 block text-xs text-[#b9674a]">{errors.password.message}</span>}</label>
             <button type="submit" disabled={isSubmitting} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-lg bg-[#c6a15b] text-sm font-semibold uppercase tracking-wider text-[#022c24] transition hover:bg-[#063c2f] hover:text-[#fbf8f1] disabled:opacity-50">{isSubmitting ? "Đang đăng nhập..." : <>Đăng nhập <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
+          {isLoggedIn && (
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={isSubmitting}
+              className="mt-4 flex h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-[#063c2f]/30 text-sm font-semibold text-[#063c2f] transition hover:bg-[#063c2f]/10 disabled:opacity-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {isSubmitting ? "Đang đăng xuất..." : "Đăng xuất"}
+            </button>
+          )}
           <p className="mt-7 border-t border-[#e5dece] pt-5 text-center text-sm text-[#8d958f]">Chưa có tài khoản? <Link href="/" className="font-bold text-[#063c2f] underline underline-offset-4">Đăng ký ngay →</Link></p>
         </div>
       </section>

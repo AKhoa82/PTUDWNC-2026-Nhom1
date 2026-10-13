@@ -36,6 +36,13 @@ namespace CulinaryBlog.Infrastructure.Migrations
                 maxLength: 45,
                 nullable: true);
 
+            // Some development databases already have this column from an
+            // earlier schema revision, but the migration was never recorded.
+            // The legacy refresh-token rows are cleared above, so recreate it
+            // with the current bounded type instead of failing on duplicate DDL.
+            migrationBuilder.Sql(
+                "ALTER TABLE \"RefreshTokens\" DROP COLUMN IF EXISTS \"ReplacedByTokenHash\";");
+
             migrationBuilder.AddColumn<string>(
                 name: "ReplacedByTokenHash",
                 table: "RefreshTokens",
