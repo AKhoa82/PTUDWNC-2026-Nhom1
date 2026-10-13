@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Providers from "./providers";
 
 export const metadata: Metadata = {
   title: "CulinaryBlog | Đăng ký",
@@ -12,7 +13,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className="min-h-screen w-full bg-[#f5f0e6] font-sans selection:bg-[#c6a15b]/25 selection:text-[#022c24]">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
