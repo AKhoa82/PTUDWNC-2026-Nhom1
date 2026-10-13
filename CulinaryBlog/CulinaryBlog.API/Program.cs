@@ -27,6 +27,9 @@ using CulinaryBlog.Infrastructure;
 using CulinaryBlog.Infrastructure.Jobs;
 using Hangfire;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Text.Json;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -130,10 +133,11 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 
 builder.Services.AddProblemDetails();
 
-// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks ---
+// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn ---
 builder.Services.AddHealthChecks()
-    .AddDbContextCheck<ApplicationDbContext>(name: "database");
-// ---------------------------------------------------
+    .AddDbContextCheck<ApplicationDbContext>(name: "PostgreSQL", tags: new[] { "ready" })
+    .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" });
+// ---------------------------------------------------------
 
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
@@ -191,6 +195,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseStaticFiles(); // Bổ sung Middleware phục vụ sitemap.xml trong thư mục wwwroot
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
@@ -209,7 +214,7 @@ if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
     app.MapHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = []
-    }); // Đã bỏ RequireAuthorization để test không bị lỗi 401
+    });
 }
 
 app.MapGet("/api/v1/categories", async (
@@ -338,7 +343,6 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // Tạo sẵn User Admin bằng DbContext trực tiếp để tránh lỗi Identity Validation khi Seed
     var adminId = Guid.Parse("99999999-9999-9999-9999-999999999999");
     var defaultAdmin = await dbContext.Users.FirstOrDefaultAsync(u => u.Email == "admin@culinaryblog.com");
     if (defaultAdmin == null)
@@ -479,25 +483,55 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageC
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CulinaryBlog.Infrastructure.Jobs.GenerateSitemapJob>(
     "generate-sitemap", job => job.ExecuteAsync(CancellationToken.None), "0 2 * * *");
 
-app.MapGet("/sitemap.xml", async (IDistributedCache cache) =>
+// --- Bổ sung FR-OBS-001: 3 Health Check Endpoints ---
+var healthCheckOptions = new HealthCheckOptions
 {
-    var xml = await cache.GetStringAsync("sitemap_xml");
-    
-    if (string.IsNullOrEmpty(xml))
+    ResponseWriter = async (context, report) =>
     {
-        return Results.NotFound("Sitemap đang được tạo tự động. Vui lòng quay lại sau ít phút.");
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            status = report.Status.ToString(),
+            totalDuration = report.TotalDuration.ToString(),
+            components = report.Entries.Select(e => new
+            {
+                name = e.Key,
+                status = e.Value.Status.ToString(),
+                description = e.Value.Description ?? "OK"
+            })
+        };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
     }
-    
-    return Results.Text(xml, "application/xml");
-})
-.WithName("GetSitemap")
-.WithSummary("Lấy file sitemap.xml cho SEO")
-.AllowAnonymous();
+};
 
-app.MapHealthChecks("/api/health")
-    .WithName("HealthCheck")
-    .WithSummary("Kiểm tra trạng thái hoạt động của hệ thống và Database")
-    .AllowAnonymous();
+app.MapHealthChecks("/health", healthCheckOptions).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = healthCheckOptions.ResponseWriter
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = healthCheckOptions.ResponseWriter
+}).AllowAnonymous();
+// ---------------------------------------------------
+
+// --- Khai báo Robots.txt ---
+app.MapGet("/robots.txt", () =>
+{
+    var frontendUrl = builder.Configuration["FrontendUrl"] ?? "http://localhost:3000";
+    var robotsTxt = $@"User-agent: *
+Allow: /
+Sitemap: {frontendUrl}/sitemap.xml";
+    return Results.Text(robotsTxt, "text/plain");
+})
+.WithName("GetRobotsTxt")
+.WithSummary("Khai báo Sitemap cho Bot tìm kiếm")
+.AllowAnonymous();
+// ---------------------------
 
 app.MapControllers();
 

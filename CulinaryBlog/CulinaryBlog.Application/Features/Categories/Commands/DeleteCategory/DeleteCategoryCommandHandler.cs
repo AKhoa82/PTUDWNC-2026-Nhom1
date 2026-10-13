@@ -21,7 +21,6 @@ public class DeleteCategoryCommandHandler : IRequestHandler<DeleteCategoryComman
     public async Task Handle(DeleteCategoryCommand request, CancellationToken cancellationToken)
     {
         var category = await _context.Categories
-            .Include(c => c.Recipes)
             .FirstOrDefaultAsync(c => c.Id == request.Id, cancellationToken);
 
         if (category == null)
@@ -29,10 +28,15 @@ public class DeleteCategoryCommandHandler : IRequestHandler<DeleteCategoryComman
             throw new NotFoundException($"Không tìm thấy danh mục với Id: {request.Id}");
         }
 
-        // Ràng buộc: Không cho xóa nếu danh mục đang có công thức
-        if (category.Recipes.Any())
+        // Đếm toàn bộ công thức tham chiếu, BỎ QUA Query Filter để gom cả công thức đã xóa mềm
+        var recipeCount = await _context.Recipes
+            .IgnoreQueryFilters()
+            .CountAsync(r => r.CategoryId == request.Id, cancellationToken);
+
+        if (recipeCount > 0)
         {
-            throw new ConflictException("Không thể xóa danh mục đang chứa công thức. Vui lòng chuyển công thức sang danh mục khác trước.");
+            // Trả về ConflictException (HTTP 409) kèm theo số lượng công thức cụ thể
+            throw new ConflictException($"Không thể xóa danh mục này. Đang có {recipeCount} công thức phụ thuộc (bao gồm cả công thức đang bị ẩn hoặc xóa mềm).");
         }
 
         _context.Categories.Remove(category);
