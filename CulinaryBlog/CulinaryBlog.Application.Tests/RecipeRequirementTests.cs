@@ -144,6 +144,12 @@ public sealed class RecipeRequirementTests
         var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft : RecipeStatus.Published);
         var userId = recipe.AuthorId.ToString();
         var ingredient = recipe.Ingredients.Single();
+        var stepId = recipe.Steps.Single().Id;
+        if (operation == "ingredient-delete")
+            db.RecipeIngredients.Add(RecipeIngredient.Create(recipe.Id, "Muối", 1, "g", null, 1));
+        if (operation == "step-delete")
+            db.RecipeSteps.Add(RecipeStep.Create(recipe.Id, 2, "Bày ra tô"));
+        await db.SaveChangesAsync();
 
         switch (operation)
         {
@@ -187,7 +193,7 @@ public sealed class RecipeRequirementTests
             case "step-delete":
                 await new DeleteRecipeStepCommandHandler(db).Handle(new DeleteRecipeStepCommand
                 {
-                    RecipeId = recipe.Id, StepId = recipe.Steps.Single().Id,
+                    RecipeId = recipe.Id, StepId = stepId,
                     AuthorId = userId, IsAdmin = false
                 }, default);
                 break;

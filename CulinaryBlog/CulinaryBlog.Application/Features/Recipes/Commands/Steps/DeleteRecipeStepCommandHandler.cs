@@ -3,6 +3,8 @@ using MediatR;
 using CulinaryBlog.Application.Contracts.Persistence;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Application.Common.Exceptions;
+using CulinaryBlog.Application.Features.Recipes;
+using CulinaryBlog.Domain.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Steps;
 
@@ -18,6 +20,9 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
 
     public async Task Handle(DeleteRecipeStepCommand request, CancellationToken cancellationToken)
     {
+        await using var transaction = await RecipeMutationTransaction.BeginAsync(
+            _context, request.RecipeId, cancellationToken);
+
         var recipe = await _context.Recipes
             .Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Id == request.RecipeId, cancellationToken);
@@ -40,6 +45,10 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
             throw new NotFoundException("Bước thực hiện không tồn tại.");
         }
 
+        if (recipe.Status == RecipeStatus.Published &&
+            await _context.RecipeSteps.CountAsync(step => step.RecipeId == request.RecipeId, cancellationToken) <= 1)
+            throw new DomainException("Recipe đã xuất bản phải có ít nhất 1 bước thực hiện.");
+
         int deletedStepNumber = stepToRemove.StepNumber;
         
         recipe.Steps.Remove(stepToRemove);
@@ -54,50 +63,30 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
         {
             _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
             await _context.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
             return;
         }
 
         var maxStepNumber = recipe.Steps.Max(s => s.StepNumber);
         var offset = maxStepNumber + 1;
 
-        if (_context is DbContext dbContext)
+        // Phase 1: Shift to a safe high range to avoid UNIQUE constraint conflicts.
+        foreach (var step in remainingSteps)
         {
-            using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                // Phase 1: Shift to a safe high range to avoid UNIQUE constraint conflicts
-                foreach (var step in remainingSteps)
-                {
-                    step.StepNumber += offset;
-                }
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                // Phase 2: Shift back to correct numbers
-                foreach (var step in remainingSteps)
-                {
-                    step.StepNumber -= (offset + 1);
-                }
-                _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                await transaction.CommitAsync(cancellationToken);
-            }
-            catch
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
-            }
+            step.StepNumber += offset;
         }
-        else
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // Phase 2: Shift back to correct numbers.
+        foreach (var step in remainingSteps)
         {
-            // Fallback for non-EF environments (e.g. mock testing)
-            foreach (var step in remainingSteps) step.StepNumber += offset;
-            await _context.SaveChangesAsync(cancellationToken);
-            
-            foreach (var step in remainingSteps) step.StepNumber -= (offset + 1);
-            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
-            await _context.SaveChangesAsync(cancellationToken);
+            step.StepNumber -= (offset + 1);
         }
+        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
+        await _context.SaveChangesAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
     }
 }
 

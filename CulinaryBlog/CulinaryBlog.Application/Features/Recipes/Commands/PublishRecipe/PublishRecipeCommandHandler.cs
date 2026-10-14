@@ -1,6 +1,7 @@
 using CulinaryBlog.Application.Common.Exceptions;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Application.Features.Recipes;
 using CulinaryBlog.Domain.Entities;
 using Mapster;
 using MediatR;
@@ -19,6 +20,8 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
 
     public async Task<RecipeDto> Handle(PublishRecipeCommand request, CancellationToken ct)
     {
+        await using var transaction = await RecipeMutationTransaction.BeginAsync(_context, request.Id, ct);
+
         // 1. Lấy recipe kèm đầy đủ steps và ingredients để kiểm tra điều kiện publish
         var recipe = await _context.Recipes
             .Include(r => r.Steps)
@@ -42,6 +45,8 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
         _context.Recipes.Update(recipe);
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
+        if (transaction is not null)
+            await transaction.CommitAsync(ct);
 
         // 5. Trả về DTO
         var result = recipe.Adapt<RecipeDto>();

@@ -253,7 +253,8 @@ app.MapGet("/api/v1/recipes", async (
     string? difficulty = null,
     int? maxCookTime = null,
     int? minServings = null,
-    string sort = "-createdAt") =>
+    string sort = "-createdAt",
+    Guid? authorId = null) =>
 {
     string? currentUserId = null;
     bool isAdmin = false;
@@ -274,7 +275,8 @@ app.MapGet("/api/v1/recipes", async (
         MinServings: minServings,
         Sort: sort,
         CurrentUserId: currentUserId,
-        IsAdmin: isAdmin
+        IsAdmin: isAdmin,
+        AuthorId: authorId
     );
 
     var result = await mediator.Send(query, cancellationToken);
@@ -345,24 +347,33 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    var adminId = Guid.Parse("99999999-9999-9999-9999-999999999999");
-    var defaultAdmin = await dbContext.Users.FirstOrDefaultAsync(u => u.Email == "admin@culinaryblog.com");
-    if (defaultAdmin == null)
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+    if (app.Environment.IsDevelopment() &&
+        builder.Configuration["DevAdmin:Password"] is { Length: > 0 } adminPassword)
     {
-        defaultAdmin = new User
+        const string adminEmail = "admin@culinaryblog.local";
+        var admin = await userManager.FindByEmailAsync(adminEmail);
+        if (admin is null)
         {
-            Id = adminId,
-            UserName = "admin",
-            NormalizedUserName = "ADMIN",
-            Email = "admin@culinaryblog.com",
-            NormalizedEmail = "ADMIN@CULINARYBLOG.COM",
-            EmailConfirmed = true,
-            FullName = "System Admin",
-            SecurityStamp = Guid.NewGuid().ToString(),
-            ConcurrencyStamp = Guid.NewGuid().ToString()
-        };
-        dbContext.Users.Add(defaultAdmin);
-        await dbContext.SaveChangesAsync();
+            admin = new User
+            {
+                UserName = "dev-admin",
+                Email = adminEmail,
+                EmailConfirmed = true,
+                FullName = "Quản trị viên phát triển"
+            };
+            var createResult = await userManager.CreateAsync(admin, adminPassword);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create development admin: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+
+            var roleResult = await userManager.AddToRoleAsync(admin, "Admin");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign development admin role: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+        else if (!await userManager.IsInRoleAsync(admin, "Admin"))
+        {
+            throw new InvalidOperationException($"{adminEmail} already exists without the Admin role. Use another account or resolve the existing account manually.");
+        }
     }
 
     if (!await dbContext.Categories.AnyAsync())
@@ -375,13 +386,36 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 
-    if (!await dbContext.Recipes.AnyAsync())
+    const string sampleAuthorUserName = "sample-recipe-author";
+    if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
+        var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+        if (sampleAuthor is null)
+        {
+            sampleAuthor = new User
+            {
+                UserName = sampleAuthorUserName,
+                Email = "sample-recipe-author@culinaryblog.local",
+                FullName = "Tác giả công thức mẫu"
+            };
+            var createResult = await userManager.CreateAsync(sampleAuthor);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create sample recipe author: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+        }
+
+        if (!await userManager.IsInRoleAsync(sampleAuthor, "Author"))
+        {
+            var roleResult = await userManager.AddToRoleAsync(sampleAuthor, "Author");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign Author role to sample recipe author: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+
         var monVietId = Guid.Parse("11111111-0000-0000-0000-000000000001");
         var monAId    = Guid.Parse("11111111-0000-0000-0000-000000000002");
         var monAuId   = Guid.Parse("11111111-0000-0000-0000-000000000003");
 
-        dbContext.Recipes.AddRange(
+        var sampleRecipes = new[]
+        {
             new Recipe
             {
                 Title              = "Phở Bò Hà Nội",
@@ -394,7 +428,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Hard,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -409,7 +443,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -424,7 +458,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Easy,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -439,7 +473,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Expert,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -454,7 +488,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -469,12 +503,32 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             }
-        );
+        };
+
+        foreach (var recipe in sampleRecipes)
+            SampleRecipeContent.Ensure(recipe);
+
+        dbContext.Recipes.AddRange(sampleRecipes);
 
         await dbContext.SaveChangesAsync();
+    }
+
+    var existingSampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+    if (existingSampleAuthor is not null)
+    {
+        var existingSampleRecipes = await dbContext.Recipes
+            .Where(recipe => recipe.AuthorId == existingSampleAuthor.Id)
+            .Include(recipe => recipe.Ingredients)
+            .Include(recipe => recipe.Steps)
+            .ToListAsync();
+        var hasMissingContent = false;
+        foreach (var recipe in existingSampleRecipes)
+            hasMissingContent |= SampleRecipeContent.Ensure(recipe, dbContext);
+        if (hasMissingContent)
+            await dbContext.SaveChangesAsync();
     }
 }
 
