@@ -28,6 +28,7 @@ export function SiteShell({ children }: SiteShellProps) {
   }, [pathname]);
 
   const isAuthPage = pathname.startsWith("/auth/");
+  const isDashboardPage = pathname.startsWith("/dashboard");
 
   if (isAuthPage) {
     return <>{children}</>;
@@ -44,8 +45,8 @@ export function SiteShell({ children }: SiteShellProps) {
         {children}
       </div>
 
-      {/* FOOTER */}
-      <Footer />
+      {/* Dashboard places its footer inside the scrollable content column. */}
+      {!isDashboardPage && <Footer />}
 
     </div>
   );

@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, BookOpen, Clock3, FolderTree, PlusCircle, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { Badge } from "../ui/Badge";
-import { Button } from "../ui/Button";
 import { DashboardStatSkeleton, TableRowSkeleton } from "../ui/Skeleton";
 import { AUTH_CHANGED_EVENT, readAuthSession, type AuthSession } from "../../lib/auth-session";
 
@@ -58,9 +57,9 @@ export function DashboardOverview() {
   }, []);
 
   const recipesQuery = useQuery({
-    queryKey: ["dashboard", "recipes", session?.id ?? "guest"],
-    queryFn: () => getJson<PagedRecipes>("/v1/recipes?page=1&pageSize=8&sort=-createdAt", Boolean(session)),
-    enabled: authReady,
+    queryKey: ["dashboard", "recipes", session?.id, session?.role],
+    queryFn: () => getJson<PagedRecipes>(`/v1/recipes?page=1&pageSize=8&sort=-createdAt${session?.role === "author" ? `&authorId=${encodeURIComponent(session.id)}` : ""}`, true),
+    enabled: authReady && (session?.role === "author" || session?.role === "admin"),
     staleTime: 60_000,
   });
   const categoriesQuery = useQuery({
@@ -78,7 +77,7 @@ export function DashboardOverview() {
   const categoryRecipeTotal = categories.reduce((sum, category) => sum + category.recipeCount, 0);
   const popularCategories = [...categories].sort((a, b) => b.recipeCount - a.recipeCount).slice(0, 5);
   const stats = [
-    { label: "Tổng công thức", value: recipesQuery.data?.totalCount ?? 0, note: "Trong danh sách hiện có", icon: UtensilsCrossed, color: "text-[#C6A15B]" },
+    { label: session?.role === "admin" ? "Tổng công thức hệ thống" : "Công thức của tôi", value: recipesQuery.data?.totalCount ?? 0, note: session?.role === "admin" ? "Toàn hệ thống" : "Do bạn tạo", icon: UtensilsCrossed, color: "text-[#C6A15B]" },
     { label: "Đã xuất bản", value: publishedCount, note: "Trong 8 công thức gần nhất", icon: BookOpen, color: "text-[#063C2F]" },
     { label: "Danh mục món ăn", value: categories.length, note: "Danh mục hiện có", icon: FolderTree, color: "text-[#B9674A]" },
     { label: "Thời gian nấu TB", value: `${averageCookTime} phút`, note: "Trong 8 công thức gần nhất", icon: Clock3, color: "text-[#C6A15B]" },
@@ -93,7 +92,7 @@ export function DashboardOverview() {
           <h1 className="mt-4 font-editorial text-2xl font-bold sm:text-3xl">Chào mừng trở lại, {session?.name ?? "bạn"}!</h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[#F5F0E6]/80">Theo dõi công thức mới và khám phá những danh mục được cộng đồng quan tâm.</p>
         </div>
-        <Button variant="secondary" leftIcon={<PlusCircle className="h-4 w-4" />} disabled title="Chức năng biên soạn đang được phát triển" className="relative z-10 shrink-0">Biên soạn món mới</Button>
+        <Link href="/dashboard/recipes/new" className="relative z-10 inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#C6A15B] px-4 py-2.5 text-sm font-semibold text-[#022C24] hover:bg-[#B8934E]"><PlusCircle className="h-4 w-4" />Biên soạn món mới</Link>
       </section>
 
       <section aria-label="Thống kê tổng quan" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -114,8 +113,8 @@ export function DashboardOverview() {
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="space-y-4 rounded-2xl border border-[#E5DECE] bg-[#FBF8F1] p-6 shadow-sm lg:col-span-2">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h2 className="font-editorial text-lg font-bold text-[#1C2421]">Công thức mới gần đây</h2><p className="mt-1 text-xs text-[#66726B]">Những công thức được tạo gần nhất</p></div>
-            <Link href="/recipes" className="inline-flex items-center gap-1 text-xs font-semibold text-[#063C2F] hover:text-[#A8894D]">Xem tất cả <ArrowRight className="h-3.5 w-3.5" /></Link>
+            <div><h2 className="font-editorial text-lg font-bold text-[#1C2421]">{session?.role === "admin" ? "Công thức mới toàn hệ thống" : "Công thức mới của tôi"}</h2><p className="mt-1 text-xs text-[#66726B]">Những công thức được tạo gần nhất</p></div>
+            <Link href="/dashboard/recipes" className="inline-flex items-center gap-1 text-xs font-semibold text-[#063C2F] hover:text-[#A8894D]">Xem tất cả <ArrowRight className="h-3.5 w-3.5" /></Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-xs">

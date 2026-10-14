@@ -239,7 +239,8 @@ app.MapGet("/api/v1/recipes", async (
     string? difficulty = null,
     int? maxCookTime = null,
     int? minServings = null,
-    string sort = "-createdAt") =>
+    string sort = "-createdAt",
+    Guid? authorId = null) =>
 {
 
         // Difficulty validation moved to GetRecipesQueryValidator; raw value handled in handler.
@@ -263,7 +264,8 @@ app.MapGet("/api/v1/recipes", async (
         MinServings: minServings,
         Sort: sort,
         CurrentUserId: currentUserId,
-        IsAdmin: isAdmin
+        IsAdmin: isAdmin,
+        AuthorId: authorId
     );
 
     var result = await mediator.Send(query, cancellationToken);
@@ -399,6 +401,35 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+    if (app.Environment.IsDevelopment() &&
+        builder.Configuration["DevAdmin:Password"] is { Length: > 0 } adminPassword)
+    {
+        const string adminEmail = "admin@culinaryblog.local";
+        var admin = await userManager.FindByEmailAsync(adminEmail);
+        if (admin is null)
+        {
+            admin = new User
+            {
+                UserName = "dev-admin",
+                Email = adminEmail,
+                EmailConfirmed = true,
+                FullName = "Quản trị viên phát triển"
+            };
+            var createResult = await userManager.CreateAsync(admin, adminPassword);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create development admin: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+
+            var roleResult = await userManager.AddToRoleAsync(admin, "Admin");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign development admin role: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+        else if (!await userManager.IsInRoleAsync(admin, "Admin"))
+        {
+            throw new InvalidOperationException($"{adminEmail} already exists without the Admin role. Use another account or resolve the existing account manually.");
+        }
+    }
+
     if (!await dbContext.Categories.AnyAsync())
     {
         var monViet = new Category { Id = Guid.Parse("11111111-0000-0000-0000-000000000001"), Name = "Món Việt", Slug = "mon-viet", Description = "Các món ăn truyền thống Việt Nam" };
@@ -410,8 +441,6 @@ using (var scope = app.Services.CreateScope())
     }
 
     const string sampleAuthorUserName = "sample-recipe-author";
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-
     if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
         var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
