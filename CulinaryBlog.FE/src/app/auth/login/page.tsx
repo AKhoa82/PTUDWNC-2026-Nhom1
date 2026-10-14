@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
+import { saveAuthSession, type LoginResponse } from "../../../lib/auth-session";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
 
@@ -17,6 +19,7 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -31,20 +34,17 @@ export default function LoginPage() {
     setSuccessMessage("");
 
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
+      const response = await fetch(`${apiUrl}/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
       const responseText = await response.text();
-      let data: {
-        message?: string;
-        user?: { accessToken?: string; refreshToken?: string; accessTokenExpiresAt?: string };
-      } = {};
+      let data: Partial<LoginResponse> & { message?: string; detail?: string } = {};
 
       if (responseText.trim()) {
         try {
-          data = JSON.parse(responseText) as { message?: string };
+          data = JSON.parse(responseText) as Partial<LoginResponse> & { message?: string; detail?: string };
         } catch {
           data = {};
         }
@@ -57,19 +57,23 @@ export default function LoginPage() {
             ? "Tài khoản đã bị khóa trong 15 phút do nhập sai quá nhiều lần."
           : response.status === 503
             ? "Cơ sở dữ liệu đang tạm thời không khả dụng. Vui lòng thử lại sau."
-            : data.message ?? "Đăng nhập không thành công. Vui lòng thử lại.";
+            : data.detail ?? data.message ?? "Đăng nhập không thành công. Vui lòng thử lại.";
 
         throw new Error(message);
       }
 
-      if (data.user?.accessToken && data.user.refreshToken) {
-        localStorage.setItem("accessToken", data.user.accessToken);
-        localStorage.setItem("refreshToken", data.user.refreshToken);
-        if (data.user.accessTokenExpiresAt) {
-          localStorage.setItem("accessTokenExpiresAt", data.user.accessTokenExpiresAt);
-        }
+      if (!data.accessToken || !data.refreshToken || !data.accessTokenExpiresAt) {
+        throw new Error("Phản hồi đăng nhập thiếu thông tin phiên.");
       }
-      setSuccessMessage(data.message ?? "Đăng nhập thành công.");
+      saveAuthSession({
+        username: data.username ?? "",
+        fullName: data.fullName ?? "",
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        accessTokenExpiresAt: data.accessTokenExpiresAt,
+      });
+      setSuccessMessage("Đăng nhập thành công.");
+      router.push("/recipes");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Không thể kết nối đến máy chủ.");
     } finally {
@@ -101,7 +105,7 @@ export default function LoginPage() {
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Mật khẩu *</span><span className="relative block"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type={showPassword ? "text" : "password"} placeholder="••••••••" className={`${fieldClass(Boolean(errors.password))} pl-10 pr-11`} {...register("password")} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8d958f]" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>{errors.password && <span className="mt-1 block text-xs text-[#b9674a]">{errors.password.message}</span>}</label>
             <button type="submit" disabled={isSubmitting} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-lg bg-[#c6a15b] text-sm font-semibold uppercase tracking-wider text-[#022c24] transition hover:bg-[#063c2f] hover:text-[#fbf8f1] disabled:opacity-50">{isSubmitting ? "Đang đăng nhập..." : <>Đăng nhập <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
-          <p className="mt-7 border-t border-[#e5dece] pt-5 text-center text-sm text-[#8d958f]">Chưa có tài khoản? <Link href="/" className="font-bold text-[#063c2f] underline underline-offset-4">Đăng ký ngay →</Link></p>
+          <p className="mt-7 border-t border-[#e5dece] pt-5 text-center text-sm text-[#8d958f]">Chưa có tài khoản? <Link href="/auth/register" className="font-bold text-[#063c2f] underline underline-offset-4">Đăng ký ngay →</Link></p>
         </div>
       </section>
     </main>
