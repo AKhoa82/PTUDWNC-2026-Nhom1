@@ -31,7 +31,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (session?.backendAuth) {
-      saveAuthResponse(session.backendAuth);
+      saveAuthResponse(session.backendAuth, false);
       setSuccessMessage("Bạn đã đăng nhập Google thành công.");
     }
   }, [session]);

@@ -29,6 +29,7 @@ using CulinaryBlog.Infrastructure;
 using CulinaryBlog.Infrastructure.Jobs;
 using Hangfire;
 using Microsoft.AspNetCore.RateLimiting;
+using StackExchange.Redis;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -61,6 +62,12 @@ if (OperatingSystem.IsWindows())
 
 builder.Services.AddFrontendCors(builder.Configuration);
 builder.Services.AddHttpClient();
+builder.Services.AddTrustedForwardedHeaders(builder.Configuration);
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:Redis.");
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddSingleton<IAuthRateLimitCounter, RedisAuthRateLimitCounter>();
 builder.Services.AddDataProtection();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -126,8 +133,6 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
-builder.Services.AddRateLimiter(options =>
-    options.AddPolicy<string, AuthRateLimitPolicy>(AuthRateLimitPolicy.Name));
 builder.Services.AddControllers();
 builder.Services.AddOpenApi(options =>
 {
@@ -180,11 +185,13 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 app.UseRateLimiter();
 app.UseRecipeImageRequestLimits();
 app.UseOutputCache();

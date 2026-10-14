@@ -6,12 +6,14 @@ using MediatR;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Hosting;
 
 namespace CulinaryBlog.API.Endpoints;
 
 public static class AuthEndpoints
 {
+    public const string RefreshTokenCookieName = "culinaryblog_refresh";
+
     public static IEndpointRouteBuilder MapAuthEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
@@ -20,7 +22,6 @@ public static class AuthEndpoints
         group.MapPost("/register", Register).WithSummary("FR-AUTH-001: Đăng ký tài khoản");
         group.MapPost("/login", Login).WithSummary("FR-AUTH-002: Đăng nhập");
         group.MapPost("/google", GoogleLogin)
-            .RequireRateLimiting(AuthRateLimitPolicy.Name)
             .WithSummary("FR-AUTH-003: Đăng nhập bằng Google")
             .AllowAnonymous()
             .Produces<AuthResponseDto>(StatusCodes.Status200OK)
@@ -49,6 +50,8 @@ public static class AuthEndpoints
     private static async Task<IResult> GoogleLogin(
         GoogleLoginRequest request,
         IMediator mediator,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         try
@@ -57,7 +60,7 @@ public static class AuthEndpoints
                 new GoogleLoginCommand(request.IdToken),
                 cancellationToken);
 
-            return Results.Ok(response);
+            return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -93,5 +96,30 @@ public static class AuthEndpoints
             cancellationToken);
 
         return Results.Created(string.Empty, response);
+    }
+
+    private static AuthResponseDto PrepareAuthResponse(
+        AuthResponseDto response,
+        HttpContext httpContext,
+        IWebHostEnvironment environment)
+    {
+        if (!environment.IsProduction())
+            return response;
+
+        httpContext.Response.Cookies.Append(
+            RefreshTokenCookieName,
+            response.RefreshToken,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Path = "/api/v1/auth",
+                Expires = response.RefreshTokenExpiresAt,
+                MaxAge = response.RefreshTokenExpiresAt - DateTime.UtcNow,
+                IsEssential = true
+            });
+
+        return response with { RefreshToken = string.Empty };
     }
 }

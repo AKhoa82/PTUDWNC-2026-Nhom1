@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { headers } from "next/headers";
 import type { AuthResponse } from "@/lib/auth-client";
 
 const googleClientId = process.env.AUTH_GOOGLE_ID ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -24,9 +25,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.provider !== "google") return token;
       if (!account.id_token) throw new Error("Google did not return an ID token.");
 
+      const requestHeaders = await headers();
+      const trustedClientIpHeader = process.env.AUTH_CLIENT_IP_HEADER?.trim().toLowerCase();
+      const trustedClientIp = trustedClientIpHeader
+        ? requestHeaders.get(trustedClientIpHeader)
+        : null;
+
       const response = await fetch(`${apiBaseUrl}/v1/auth/google`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(trustedClientIp ? { "X-Forwarded-For": trustedClientIp } : {}),
+        },
         body: JSON.stringify({ idToken: account.id_token }),
         cache: "no-store",
       });
@@ -35,16 +45,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         | (Partial<AuthResponse> & { message?: string })
         | null;
 
-      if (!response.ok || !result?.accessToken || !result?.refreshToken) {
+      const refreshToken = result?.refreshToken ?? readRefreshCookie(response.headers.get("set-cookie"));
+      if (!response.ok || !result?.accessToken || !refreshToken) {
         throw new Error(result?.message ?? "The API could not complete Google sign-in.");
       }
 
-      token.backendAuth = result as AuthResponse;
+      token.backendAuth = { ...result, refreshToken } as AuthResponse;
       return token;
     },
     async session({ session, token }) {
-      session.backendAuth = token.backendAuth as AuthResponse | undefined;
+      const backendAuth = token.backendAuth as AuthResponse | undefined;
+      if (backendAuth) {
+        const { refreshToken: _refreshToken, ...clientAuth } = backendAuth;
+        session.backendAuth = clientAuth;
+      }
       return session;
     },
   },
 });
+
+function readRefreshCookie(setCookie: string | null): string | undefined {
+  if (!setCookie) return undefined;
+
+  const cookiePair = setCookie.split(";", 1)[0];
+  const prefix = "culinaryblog_refresh=";
+  if (!cookiePair.startsWith(prefix)) return undefined;
+
+  return decodeURIComponent(cookiePair.slice(prefix.length));
+}

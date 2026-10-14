@@ -4,6 +4,8 @@ using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.DTOs;
 using MediatR;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
@@ -54,7 +56,10 @@ public class GoogleTokenVerificationTests
     private static async Task<IResult> InvokeEndpointAsync(IMediator mediator)
     {
         var method = typeof(AuthEndpoints).GetMethod("GoogleLogin", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var task = (Task<IResult>)method.Invoke(null, [new GoogleLoginRequest("test-token"), mediator, CancellationToken.None])!;
+        var environment = new Mock<IWebHostEnvironment>();
+        environment.SetupGet(value => value.EnvironmentName).Returns(Environments.Development);
+        var task = (Task<IResult>)method.Invoke(null,
+        [new GoogleLoginRequest("test-token"), mediator, new DefaultHttpContext(), environment.Object, CancellationToken.None])!;
         return await task;
     }
 }
