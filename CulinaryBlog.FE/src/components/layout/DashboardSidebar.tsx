@@ -72,7 +72,7 @@ export function DashboardSidebar({
   const displayRole = roleLabel ?? (session?.role === "admin" ? "Quản trị viên" : "Tài khoản tác giả");
 
   return (
-    <aside className="flex w-full flex-col justify-between border-b border-[#E5DECE] bg-[#FBF8F1] p-4 md:min-h-[calc(100vh-72px)] md:w-64 md:shrink-0 md:border-b-0 md:border-r">
+    <aside className="flex w-full flex-col justify-between border-b border-[#E5DECE] bg-[#FBF8F1] p-4 md:h-full md:w-64 md:shrink-0 md:overflow-hidden md:border-b-0 md:border-r">
 
       <div className="space-y-6">
 

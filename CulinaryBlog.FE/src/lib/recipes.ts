@@ -56,6 +56,13 @@ export function formatRecipeDate(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("vi-VN").format(date);
 }
 
+export class RecipeRequestError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "RecipeRequestError";
+  }
+}
+
 export async function recipeRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${recipeApiUrl}${path}`, options);
   if (!response.ok) {
@@ -64,7 +71,7 @@ export async function recipeRequest<T>(path: string, options: RequestInit = {}):
       const body = await response.json() as { detail?: string; title?: string; errors?: Record<string, string[]> };
       message = body.detail || Object.values(body.errors ?? {}).flat()[0] || body.title || message;
     } catch { /* Keep status message for non-JSON responses. */ }
-    throw new Error(message);
+    throw new RecipeRequestError(message, response.status);
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }

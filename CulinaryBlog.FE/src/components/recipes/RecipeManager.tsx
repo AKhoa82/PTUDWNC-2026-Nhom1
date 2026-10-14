@@ -23,8 +23,8 @@ export function RecipeManager() {
   }, []);
   const allowed = session?.role === "admin" || session?.role === "author";
   const recipesQuery = useQuery({
-    queryKey: ["managed-recipes", session?.id, page],
-    queryFn: () => recipeRequest<PagedRecipes>(`/v1/recipes?page=${page}&pageSize=50&sort=-createdAt`, { headers: authHeaders(), cache: "no-store" }),
+    queryKey: ["managed-recipes", session?.id, session?.role, page],
+    queryFn: () => recipeRequest<PagedRecipes>(`/v1/recipes?page=${page}&pageSize=50&sort=-createdAt${session?.role === "author" ? `&authorId=${encodeURIComponent(session.id)}` : ""}`, { headers: authHeaders(), cache: "no-store" }),
     enabled: ready && allowed,
     staleTime: 30_000,
   });
