@@ -133,11 +133,13 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 
 builder.Services.AddProblemDetails();
 
-// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn ---
+// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn SRS ---
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(name: "PostgreSQL", tags: new[] { "ready" })
-    .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" });
-// ---------------------------------------------------------
+    .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" })
+    // MinIO không có tag "ready" nên /health/ready sẽ bỏ qua nó
+    .AddUrlGroup(new Uri(builder.Configuration["MinIO:Endpoint"] ?? "http://localhost:9000/minio/health/live"), name: "MinIO");
+// -----------------------------------------------------------
 
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
@@ -493,12 +495,14 @@ var healthCheckOptions = new HealthCheckOptions
         {
             status = report.Status.ToString(),
             totalDuration = report.TotalDuration.ToString(),
-            components = report.Entries.Select(e => new
-            {
-                name = e.Key,
-                status = e.Value.Status.ToString(),
-                description = e.Value.Description ?? "OK"
-            })
+            // Sửa đổi format từ mảng "components" sang object "entries"
+            entries = report.Entries.ToDictionary(
+                e => e.Key,
+                e => new
+                {
+                    status = e.Value.Status.ToString(),
+                    description = e.Value.Description ?? "OK"
+                })
         };
         await context.Response.WriteAsync(JsonSerializer.Serialize(response));
     }
@@ -522,10 +526,11 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions
 // --- Khai báo Robots.txt ---
 app.MapGet("/robots.txt", () =>
 {
-    var frontendUrl = builder.Configuration["FrontendUrl"] ?? "http://localhost:3000";
+    // Sitemap được serve vật lý từ backend (Cổng 5018)
+    var backendUrl = builder.Configuration["BackendUrl"] ?? "http://localhost:5018";
     var robotsTxt = $@"User-agent: *
 Allow: /
-Sitemap: {frontendUrl}/sitemap.xml";
+Sitemap: {backendUrl}/sitemap.xml";
     return Results.Text(robotsTxt, "text/plain");
 })
 .WithName("GetRobotsTxt")
