@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { ArrowLeft, ChefHat, ImageIcon, Plus, Save, Trash2 } from "lucide-react";
 import { AUTH_CHANGED_EVENT, readAuthSession, type AuthSession } from "../../lib/auth-session";
-import { authHeaders, recipeImageUrl, recipeRequest, type PagedRecipes, type RecipeCategory, type RecipeDetail } from "../../lib/recipes";
+import { authHeaders, recipeImageUrl, recipeRequest, RecipeRequestError, type PagedRecipes, type RecipeCategory, type RecipeDetail } from "../../lib/recipes";
 
 const ingredientSchema = z.object({
   serverId: z.string().optional(),
@@ -25,7 +25,7 @@ const stepSchema = z.object({
 });
 const schema = z.object({
   title: z.string().trim().min(5, "Tiêu đề phải có ít nhất 5 ký tự.").max(200),
-  categoryId: z.string().uuid("Chọn danh mục món ăn."),
+  categoryId: z.guid("Chọn danh mục món ăn."),
   description: z.string(),
   imageUrl: z.string().max(500, "Đường dẫn ảnh quá dài.").refine(value => !value || /^https?:\/\//i.test(value) || value.startsWith("/"), "Nhập URL ảnh hợp lệ."),
   difficulty: z.enum(["1", "2", "3", "4"]),
@@ -87,6 +87,7 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
   const [session, setSession] = useState<AuthSession | null>(null);
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState(initialNotice ?? "");
+  const [loginRequired, setLoginRequired] = useState(false);
   const [saving, setSaving] = useState(false);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [hydratedRecipeId, setHydratedRecipeId] = useState<string | null>(null);
@@ -139,7 +140,13 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
   }
 
   async function submit(values: FormValues) {
+    if (!readAuthSession()) {
+      setSaveError("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại trong tab mới, sau đó quay về đây để lưu công thức.");
+      setLoginRequired(true);
+      return;
+    }
     setSaving(true); setSaveError("");
+    setLoginRequired(false);
     let primarySaved = false;
     let createdRecipe: { id: string; slug: string } | null = null;
     const nutrition = values.calories || values.protein || values.carbs || values.fat ? { calories: values.calories, protein: values.protein, carbs: values.carbs, fat: values.fat, fiber: null, sodium: null } : null;
@@ -167,6 +174,12 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
         router.push(`/dashboard/recipes/${createdRecipe.id}/edit?slug=${encodeURIComponent(createdRecipe.slug)}&notice=draft`);
         return;
       }
+      if (error instanceof RecipeRequestError && error.status === 401) {
+        setSaveError("Phiên đăng nhập không còn hợp lệ. Hãy đăng nhập lại trong tab mới, sau đó quay về đây để lưu công thức.");
+        setLoginRequired(true);
+        setSaving(false);
+        return;
+      }
       setSaveError(`${error instanceof Error ? error.message : "Không thể lưu công thức."}${primarySaved ? " Một phần dữ liệu có thể đã được lưu; hãy tải lại trang để kiểm tra." : ""}`);
       if (primarySaved) { setHydratedRecipeId(null); await queryClient.invalidateQueries({ queryKey: ["edit-recipe"] }); }
       setSaving(false);
@@ -182,7 +195,7 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
   return <div className="mx-auto max-w-4xl space-y-8 pb-16">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5DECE] pb-4"><Link href="/dashboard/recipes" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#66726B] hover:text-[#063C2F]"><ArrowLeft className="h-4 w-4" />Quay lại danh sách công thức</Link><span className="text-[10px] font-semibold uppercase tracking-wider text-[#A8894D]">Biên tập công thức</span></div>
     <header><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#A8894D]">{isEdit ? "Hiệu chỉnh món ăn" : "Sáng tác món mới"}</p><h1 className="mt-1 font-editorial text-3xl font-bold text-[#1C2421]">{isEdit ? "Chỉnh Sửa Công Thức Nấu Ăn" : "Tạo Công Thức Nấu Ăn Mới"}</h1><p className="mt-2 text-sm text-[#66726B]">Điền thông tin, nguyên liệu và các bước nấu cho công thức.</p></header>
-    {saveError && <p role="alert" className="rounded-xl border border-[#B9674A]/30 bg-[#B9674A]/10 p-4 text-sm text-[#8D3C25]">{saveError}</p>}
+    {saveError && <div role="alert" className="rounded-xl border border-[#B9674A]/30 bg-[#B9674A]/10 p-4 text-sm text-[#8D3C25]">{saveError}{loginRequired && <a href="/auth/login" target="_blank" rel="noopener noreferrer" className="ml-2 font-semibold underline">Mở trang đăng nhập</a>}</div>}
     <form onSubmit={form.handleSubmit(submit)} className="space-y-8">
       <section className={panelClass}><h2 className="border-b border-[#E5DECE] pb-3 font-editorial text-lg font-bold">1. Thông tin cơ bản</h2><div className="grid gap-4 md:grid-cols-2">
         <label className="md:col-span-2"><span className={labelClass}>Tiêu đề công thức *</span><input {...form.register("title")} placeholder="Ví dụ: Bún bò Huế" className={inputClass} /><ErrorText text={form.formState.errors.title?.message} /></label>
