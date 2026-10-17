@@ -13,6 +13,7 @@ public interface IApplicationDbContext
     DbSet<RecipeImage> RecipeImages { get; }
     DbSet<RecipeIngredient> RecipeIngredients { get; }
     DbSet<RecipeStep> RecipeSteps { get; }
+    DbSet<WelcomeEmailOutbox> WelcomeEmailOutboxes { get; }
     DbSet<RefreshToken> RefreshTokens { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

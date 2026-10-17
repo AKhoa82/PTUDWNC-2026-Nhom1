@@ -591,6 +591,9 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletion
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
     "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
 
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<WelcomeEmailReconciliationJob>(
+    "reconcile-welcome-emails", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
+
 app.MapControllers();
 
 app.Run();

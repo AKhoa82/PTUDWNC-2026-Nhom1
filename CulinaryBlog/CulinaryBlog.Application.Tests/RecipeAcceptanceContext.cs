@@ -16,6 +16,7 @@ internal sealed class RecipeAcceptanceContext : DbContext, IApplicationDbContext
     public DbSet<RecipeImage> RecipeImages => Set<RecipeImage>();
     public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
     public DbSet<RecipeStep> RecipeSteps => Set<RecipeStep>();
+    public DbSet<WelcomeEmailOutbox> WelcomeEmailOutboxes => Set<WelcomeEmailOutbox>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public Task<string?> GetRecipeListVersionAsync(CancellationToken cancellationToken = default)
