@@ -36,6 +36,7 @@ export default function RegisterPage() {
       const response = await fetch(`${apiUrl}/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           fullName: values.name,
           username: values.userName,
@@ -53,7 +54,8 @@ export default function RegisterPage() {
       }
 
       setRegSuccess(true);
-      if (data.accessToken && data.refreshToken && data.accessTokenExpiresAt) {
+      if (data.accessToken && data.accessTokenExpiresAt &&
+          (process.env.NODE_ENV === "production" || data.refreshToken)) {
         saveAuthSession({
           username: data.username ?? "",
           fullName: data.fullName ?? "",

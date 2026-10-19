@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { ArrowLeft, ChefHat, ImageIcon, Plus, Save, Trash2 } from "lucide-react";
-import { AUTH_CHANGED_EVENT, readAuthSession, type AuthSession } from "../../lib/auth-session";
+import { AUTH_CHANGED_EVENT, ensureFreshSession, readAuthSession, type AuthSession } from "../../lib/auth-session";
 import { authHeaders, recipeImageUrl, recipeRequest, RecipeRequestError, type PagedRecipes, type RecipeCategory, type RecipeDetail } from "../../lib/recipes";
 
 const ingredientSchema = z.object({
@@ -140,7 +140,7 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
   }
 
   async function submit(values: FormValues) {
-    if (!readAuthSession()) {
+    if (!readAuthSession() && !await ensureFreshSession()) {
       setSaveError("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại trong tab mới, sau đó quay về đây để lưu công thức.");
       setLoginRequired(true);
       return;

@@ -28,5 +28,6 @@ export function clearAuth(): void {
   window.localStorage.removeItem("refreshToken");
   window.localStorage.removeItem("accessTokenExpiresAt");
   window.localStorage.removeItem("userName");
+  window.localStorage.removeItem("authProvider");
   window.dispatchEvent(new Event("culinaryblog:auth-changed"));
 }

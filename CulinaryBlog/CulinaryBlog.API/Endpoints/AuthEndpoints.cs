@@ -2,11 +2,14 @@ using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Login;
 using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Auth.Refresh;
 using MediatR;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -31,6 +34,11 @@ public static class AuthEndpoints
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .ProducesProblem(StatusCodes.Status502BadGateway);
+        group.MapPost("/refresh", Refresh)
+            .WithSummary("FR-AUTH-004: Làm mới access token")
+            .AllowAnonymous()
+            .Produces<AuthResponseDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }
@@ -38,13 +46,15 @@ public static class AuthEndpoints
     private static async Task<IResult> Login(
         LoginRequest request,
         IMediator mediator,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         var response = await mediator.Send(
             new LoginCommand(request),
             cancellationToken);
 
-        return Results.Ok(response);
+        return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
     }
 
     private static async Task<IResult> GoogleLogin(
@@ -86,16 +96,42 @@ public static class AuthEndpoints
                 statusCode: StatusCodes.Status502BadGateway);
         }
     }
+
+    private static async Task<IResult> Refresh(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] RefreshTokenRequest? request,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
+        IMediator mediator,
+        CancellationToken cancellationToken)
+    {
+        var rawToken = environment.IsProduction()
+            ? httpContext.Request.Cookies[RefreshTokenCookieName]
+            : request?.RefreshToken;
+        try
+        {
+            var response = await mediator.Send(new RefreshTokenCommand(rawToken ?? string.Empty), cancellationToken);
+            return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
+        }
+        catch (RefreshTokenRejectedException ex)
+        {
+            return Results.Problem(
+                type: $"urn:culinaryblog:{ex.Code}",
+                title: "Unauthorized",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+    }
     private static async Task<IResult> Register(
         RegisterRequest request,
         IMediator mediator,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         var response = await mediator.Send(
             new RegisterCommand(request),
             cancellationToken);
 
-        return Results.Created(string.Empty, response);
+        return Results.Created(string.Empty, PrepareAuthResponse(response, httpContext, environment));
     }
 
     private static AuthResponseDto PrepareAuthResponse(
@@ -113,7 +149,7 @@ public static class AuthEndpoints
             {
                 HttpOnly = true,
                 Secure = true,
-                SameSite = SameSiteMode.None,
+                SameSite = SameSiteMode.Strict,
                 Path = "/api/v1/auth",
                 Expires = response.RefreshTokenExpiresAt,
                 MaxAge = response.RefreshTokenExpiresAt - DateTime.UtcNow,
@@ -122,4 +158,5 @@ public static class AuthEndpoints
 
         return response with { RefreshToken = string.Empty };
     }
+
 }

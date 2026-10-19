@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { DashboardSidebar } from "../../components/layout/DashboardSidebar";
 import { Footer } from "../../components/layout/Footer";
-import { AUTH_CHANGED_EVENT, readAuthSession, type AuthSession } from "../../lib/auth-session";
+import { AUTH_CHANGED_EVENT, ensureFreshSession, readAuthSession, type AuthSession } from "../../lib/auth-session";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -12,7 +12,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const sync = () => { setSession(readAuthSession()); setReady(true); };
-    sync();
+    void ensureFreshSession().finally(sync);
     window.addEventListener("storage", sync);
     window.addEventListener(AUTH_CHANGED_EVENT, sync);
     return () => {

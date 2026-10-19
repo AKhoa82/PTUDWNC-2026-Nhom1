@@ -22,35 +22,75 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, account }) {
-      if (account?.provider !== "google") return token;
-      if (!account.id_token) throw new Error("Google did not return an ID token.");
+      if (account?.provider === "google") {
+        if (!account.id_token) throw new Error("Google did not return an ID token.");
 
-      const requestHeaders = await headers();
-      const trustedClientIpHeader = process.env.AUTH_CLIENT_IP_HEADER?.trim().toLowerCase();
-      const trustedClientIp = trustedClientIpHeader
-        ? requestHeaders.get(trustedClientIpHeader)
-        : null;
+        const requestHeaders = await headers();
+        const trustedClientIpHeader = process.env.AUTH_CLIENT_IP_HEADER?.trim().toLowerCase();
+        const trustedClientIp = trustedClientIpHeader
+          ? requestHeaders.get(trustedClientIpHeader)
+          : null;
 
-      const response = await fetch(`${apiBaseUrl}/v1/auth/google`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(trustedClientIp ? { "X-Forwarded-For": trustedClientIp } : {}),
-        },
-        body: JSON.stringify({ idToken: account.id_token }),
-        cache: "no-store",
-      });
+        const response = await fetch(`${apiBaseUrl}/v1/auth/google`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(trustedClientIp ? { "X-Forwarded-For": trustedClientIp } : {}),
+          },
+          body: JSON.stringify({ idToken: account.id_token }),
+          cache: "no-store",
+        });
 
-      const result = await response.json().catch(() => null) as
-        | (Partial<AuthResponse> & { message?: string })
-        | null;
+        const result = await response.json().catch(() => null) as
+          | (Partial<AuthResponse> & { message?: string })
+          | null;
 
-      const refreshToken = result?.refreshToken ?? readRefreshCookie(response.headers.get("set-cookie"));
-      if (!response.ok || !result?.accessToken || !refreshToken) {
-        throw new Error(result?.message ?? "The API could not complete Google sign-in.");
+        const refreshToken = result?.refreshToken || readRefreshCookie(response.headers.get("set-cookie"));
+        if (!response.ok || !result?.accessToken || !refreshToken) {
+          throw new Error(result?.message ?? "The API could not complete Google sign-in.");
+        }
+
+        token.backendAuth = { ...result, refreshToken } as AuthResponse;
+        return token;
       }
 
-      token.backendAuth = { ...result, refreshToken } as AuthResponse;
+      const backendAuth = token.backendAuth as AuthResponse | undefined;
+      if (!backendAuth || Date.parse(backendAuth.accessTokenExpiresAt) > Date.now() + 60_000) {
+        return token;
+      }
+
+      const refreshToken = backendAuth.refreshToken;
+      if (!refreshToken) {
+        delete token.backendAuth;
+        return token;
+      }
+
+      try {
+        const production = process.env.NODE_ENV === "production";
+        const response = await fetch(`${apiBaseUrl}/v1/auth/refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(production ? { Cookie: `culinaryblog_refresh=${encodeURIComponent(refreshToken)}` } : {}),
+          },
+          body: JSON.stringify({ refreshToken: production ? "" : refreshToken }),
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          if (response.status === 401) delete token.backendAuth;
+          return token;
+        }
+
+        const result = await response.json() as Partial<AuthResponse>;
+        const nextRefreshToken = result.refreshToken || readRefreshCookie(response.headers.get("set-cookie"));
+        if (!result.accessToken || !result.accessTokenExpiresAt || !nextRefreshToken) {
+          delete token.backendAuth;
+          return token;
+        }
+        token.backendAuth = { ...backendAuth, ...result, refreshToken: nextRefreshToken };
+      } catch {
+        // Keep the session for a later retry if the API is temporarily unavailable.
+      }
       return token;
     },
     async session({ session, token }) {

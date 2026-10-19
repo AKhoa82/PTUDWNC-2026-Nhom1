@@ -22,5 +22,7 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
         builder.Property(r => r.CreatedByIp)
             .HasMaxLength(45)
             .HasColumnType("varchar(45)");
+
+        builder.Property(r => r.RevokedAt).IsConcurrencyToken();
     }
 }

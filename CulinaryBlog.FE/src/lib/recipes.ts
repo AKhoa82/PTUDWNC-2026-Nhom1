@@ -64,7 +64,10 @@ export class RecipeRequestError extends Error {
 }
 
 export async function recipeRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${recipeApiUrl}${path}`, options);
+  const url = `${recipeApiUrl}${path}`;
+  const response = typeof window !== "undefined" && new Headers(options.headers).has("Authorization")
+    ? await (await import("./auth-session")).fetchWithAuth(url, options)
+    : await fetch(url, options);
   if (!response.ok) {
     let message = `Yêu cầu không thành công (${response.status}).`;
     try {
