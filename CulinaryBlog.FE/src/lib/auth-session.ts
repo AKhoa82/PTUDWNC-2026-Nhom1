@@ -8,7 +8,7 @@ export type LoginResponse = {
   username: string;
   fullName: string;
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   accessTokenExpiresAt: string;
 };
 
@@ -51,7 +51,8 @@ export function readAuthSession(): AuthSession | null {
 
 export function saveAuthSession(response: LoginResponse): void {
   localStorage.setItem("accessToken", response.accessToken);
-  localStorage.setItem("refreshToken", response.refreshToken);
+  if (response.refreshToken) localStorage.setItem("refreshToken", response.refreshToken);
+  else localStorage.removeItem("refreshToken");
   localStorage.setItem("accessTokenExpiresAt", response.accessTokenExpiresAt);
   localStorage.setItem("userName", response.fullName || response.username);
   window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));

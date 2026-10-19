@@ -1,10 +1,12 @@
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.API.Endpoints;
+using CulinaryBlog.API.Infrastructure;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Common.Behaviors;
 using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Infrastructure.Security;
@@ -26,6 +28,8 @@ using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Infrastructure;
 using CulinaryBlog.Infrastructure.Jobs;
 using Hangfire;
+using Microsoft.AspNetCore.RateLimiting;
+using StackExchange.Redis;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -56,16 +60,14 @@ if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32
 if (OperatingSystem.IsWindows())
     builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>((_, _) => false);
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("Frontend", policy =>
-    {
-        policy
-            .WithOrigins("http://localhost:3000", "http://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
+builder.Services.AddFrontendCors(builder.Configuration);
+builder.Services.AddHttpClient();
+builder.Services.AddTrustedForwardedHeaders(builder.Configuration);
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:Redis.");
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddSingleton<IAuthRateLimitCounter, RedisAuthRateLimitCounter>();
 builder.Services.AddDataProtection();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -102,6 +104,7 @@ builder.Services.AddIdentityCore<User>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterCommand).Assembly);
 builder.Services.AddMediatR(cfg =>
 {
@@ -182,11 +185,13 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.UseCors("Frontend");
+app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 app.UseRateLimiter();
 app.UseRecipeImageRequestLimits();
 app.UseOutputCache();
@@ -247,7 +252,7 @@ app.MapGet("/api/v1/recipes", async (
 
     string? currentUserId = null;
     bool isAdmin = false;
-    
+
     if (user?.Identity?.IsAuthenticated == true)
     {
         currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -363,11 +368,11 @@ app.MapPut("/api/v1/recipes/{id:guid}", async (
 {
     string? currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (string.IsNullOrEmpty(currentUserId)) throw new UnauthorizedAccessException("Token không có user ID.");
-    
+
     bool isAdmin = user.IsInRole("Admin");
 
     var result = await mediator.Send(
-        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin), 
+        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin),
         cancellationToken);
 
     await cacheStore.InvalidateAsync(result.Slug, cancellationToken);

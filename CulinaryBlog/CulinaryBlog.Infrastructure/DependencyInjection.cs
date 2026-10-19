@@ -11,6 +11,7 @@ using Hangfire.PostgreSql;
 using CulinaryBlog.Infrastructure.Jobs;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Infrastructure.Persistence;
+using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 
 namespace CulinaryBlog.Infrastructure;
 
@@ -68,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<IFileDeletionQueue, HangfireFileDeletionQueue>();
         services.AddScoped<IRecipeImageTransactionFactory, RecipeImageTransactionFactory>();
         services.AddScoped<IFileLifecycleSessionFactory, FileLifecycleSessionFactory>();
+        services.AddScoped<IGoogleLoginTransactionFactory, GoogleLoginTransactionFactory>();
         services.AddScoped<StorageMaintenanceService>();
         services.AddScoped<CulinaryBlog.Application.Features.Recipes.SearchRecipes.IRecipeSearchService, RecipeSearchService>();
         services.AddScoped<DeleteStoredFileJob>();
