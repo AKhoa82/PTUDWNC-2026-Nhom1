@@ -40,7 +40,9 @@ export default function LoginPage() {
         accessToken: session.backendAuth.accessToken,
         accessTokenExpiresAt: session.backendAuth.accessTokenExpiresAt,
       });
-      router.replace("/dashboard");
+      if (new URLSearchParams(window.location.search).get("google") === "success") {
+        router.replace("/");
+      }
     }
   }, [session, router]);
 
@@ -111,7 +113,7 @@ export default function LoginPage() {
         accessTokenExpiresAt: data.accessTokenExpiresAt,
       });
       setSuccessMessage("Đăng nhập thành công.");
-      router.push("/recipes");
+      router.push("/");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Không thể kết nối đến máy chủ.");
     } finally {
@@ -137,7 +139,7 @@ export default function LoginPage() {
 
           {serverError && <div className="mb-5 flex items-center gap-2 rounded-lg border border-[#b9674a]/30 bg-[#b9674a]/10 p-3.5 text-sm text-[#8d3c25]" role="alert"><AlertCircle className="h-4 w-4 shrink-0" /> {serverError}</div>}
           {successMessage && <div className="mb-5 rounded-lg border border-[#063c2f]/30 bg-[#063c2f]/10 p-3.5 text-sm text-[#063c2f]" role="status">{successMessage}</div>}
-          {session?.backendAuth && <button type="button" onClick={onGoogleSignOut} className="mb-5 w-full text-sm font-semibold text-[#063c2f] underline underline-offset-4">Đăng xuất Google / đổi tài khoản</button>}
+          {session?.backendAuth && <div className="mb-5 rounded-lg border border-[#063c2f]/30 bg-[#063c2f]/10 p-3.5 text-sm text-[#063c2f]" role="status">Bạn đang đăng nhập bằng Google. <Link href="/" className="font-semibold underline underline-offset-4">Về trang chủ</Link><button type="button" onClick={onGoogleSignOut} className="ml-3 font-semibold underline underline-offset-4">Đăng xuất / đổi tài khoản</button></div>}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Địa chỉ Email *</span><span className="relative block"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type="email" placeholder="vd: name@culinaryblog.vn" className={`${fieldClass(Boolean(errors.email))} pl-10`} {...register("email")} /></span>{errors.email && <span className="mt-1 block text-xs text-[#b9674a]">{errors.email.message}</span>}</label>
