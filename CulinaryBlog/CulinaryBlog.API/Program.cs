@@ -134,11 +134,23 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddProblemDetails();
 
 // --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn SRS ---
+var rawMinioEndpoint = (builder.Configuration["MinIO:Endpoint"] ?? "localhost:9000").Trim();
+var minioUseSsl = builder.Configuration.GetValue<bool>("MinIO:UseSSL");
+if (!rawMinioEndpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+    !rawMinioEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+{
+    rawMinioEndpoint = $"{(minioUseSsl ? "https" : "http")}://{rawMinioEndpoint}";
+}
+var minioHealthUrl = rawMinioEndpoint.TrimEnd('/');
+if (!minioHealthUrl.EndsWith("/minio/health/live", StringComparison.OrdinalIgnoreCase))
+{
+    minioHealthUrl += "/minio/health/live";
+}
+
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(name: "PostgreSQL", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" })
-    // MinIO không có tag "ready" nên /health/ready sẽ bỏ qua nó
-    .AddUrlGroup(new Uri(builder.Configuration["MinIO:Endpoint"] ?? "http://localhost:9000/minio/health/live"), name: "MinIO");
+    .AddUrlGroup(new Uri(minioHealthUrl), name: "MinIO");
 // -----------------------------------------------------------
 
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
@@ -197,7 +209,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.UseStaticFiles(); // Bổ sung Middleware phục vụ sitemap.xml trong thư mục wwwroot
+app.UseStaticFiles();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
@@ -216,7 +228,7 @@ if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
     app.MapHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = []
-    });
+    }).RequireAuthorization("AdminPolicy"); // Đã khôi phục kiểm tra quyền Admin
 }
 
 app.MapGet("/api/v1/categories", async (
@@ -495,7 +507,6 @@ var healthCheckOptions = new HealthCheckOptions
         {
             status = report.Status.ToString(),
             totalDuration = report.TotalDuration.ToString(),
-            // Sửa đổi format từ mảng "components" sang object "entries"
             entries = report.Entries.ToDictionary(
                 e => e.Key,
                 e => new
@@ -524,13 +535,14 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions
 // ---------------------------------------------------
 
 // --- Khai báo Robots.txt ---
-app.MapGet("/robots.txt", () =>
+app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration config) =>
 {
-    // Sitemap được serve vật lý từ backend (Cổng 5018)
-    var backendUrl = builder.Configuration["BackendUrl"] ?? "http://localhost:5018";
-    var robotsTxt = $@"User-agent: *
-Allow: /
-Sitemap: {backendUrl}/sitemap.xml";
+    // Tự động lấy URL công khai từ cấu hình hoặc từ chính Request Host hiện tại
+    var publicBaseUrl = (config["BackendBaseUrl"] 
+        ?? config["PublicBaseUrl"] 
+        ?? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}").TrimEnd('/');
+
+    var robotsTxt = $"User-agent: *\nAllow: /\nSitemap: {publicBaseUrl}/sitemap.xml";
     return Results.Text(robotsTxt, "text/plain");
 })
 .WithName("GetRobotsTxt")
