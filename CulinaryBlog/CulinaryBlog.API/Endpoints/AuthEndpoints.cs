@@ -1,20 +1,15 @@
-using System.Security.Cryptography;
-using System.Text;
-using CulinaryBlog.Application.Contracts.Persistence;
-using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Login;
 using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Auth.Refresh;
 using MediatR;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using CulinaryBlog.Domain.Entities;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -51,13 +46,15 @@ public static class AuthEndpoints
     private static async Task<IResult> Login(
         LoginRequest request,
         IMediator mediator,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         var response = await mediator.Send(
             new LoginCommand(request),
             cancellationToken);
 
-        return Results.Ok(response);
+        return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
     }
 
     private static async Task<IResult> GoogleLogin(
@@ -104,79 +101,37 @@ public static class AuthEndpoints
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] RefreshTokenRequest? request,
         HttpContext httpContext,
         IWebHostEnvironment environment,
-        [FromServices] UserManager<User> userManager,
-        [FromServices] IApplicationDbContext context,
-        [FromServices] IJwtService jwtService,
-        ILoggerFactory loggerFactory,
+        IMediator mediator,
         CancellationToken cancellationToken)
     {
         var rawToken = environment.IsProduction()
             ? httpContext.Request.Cookies[RefreshTokenCookieName]
             : request?.RefreshToken;
-        if (string.IsNullOrWhiteSpace(rawToken)) return Results.Unauthorized();
-
-        var hash = HashRefreshToken(rawToken);
-        var storedToken = await context.RefreshTokens
-            .Include(token => token.User)
-            .SingleOrDefaultAsync(token => token.TokenHash == hash, cancellationToken);
-        if (storedToken is null) return Results.Unauthorized();
-
-        var logger = loggerFactory.CreateLogger("CulinaryBlog.API.AuthEndpoints");
-        if (storedToken.RevokedAt is not null)
-        {
-            logger.LogWarning("Refresh token reuse detected for user {UserId}", storedToken.UserId);
-            return Results.Unauthorized();
-        }
-
-        var now = DateTime.UtcNow;
-        if (storedToken.ExpiresAt <= now || storedToken.User is null ||
-            await userManager.IsLockedOutAsync(storedToken.User))
-            return Results.Unauthorized();
-
-        var replacement = jwtService.GenerateRefreshToken();
-        var replacementHash = HashRefreshToken(replacement);
-        storedToken.RevokedAt = now;
-        storedToken.ReplacedByTokenHash = replacementHash;
-        context.RefreshTokens.Add(new RefreshToken
-        {
-            Id = Guid.NewGuid(),
-            UserId = storedToken.UserId,
-            TokenHash = replacementHash,
-            ExpiresAt = now.AddDays(7)
-        });
-
         try
         {
-            await context.SaveChangesAsync(cancellationToken);
+            var response = await mediator.Send(new RefreshTokenCommand(rawToken ?? string.Empty), cancellationToken);
+            return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
         }
-        catch (DbUpdateConcurrencyException)
+        catch (RefreshTokenRejectedException ex)
         {
-            logger.LogWarning("Concurrent refresh token reuse detected for user {UserId}", storedToken.UserId);
-            return Results.Unauthorized();
+            return Results.Problem(
+                type: $"urn:culinaryblog:{ex.Code}",
+                title: "Unauthorized",
+                statusCode: StatusCodes.Status401Unauthorized);
         }
-
-        var roles = await userManager.GetRolesAsync(storedToken.User);
-        var response = new AuthResponseDto(
-            storedToken.User.Id,
-            storedToken.User.UserName ?? string.Empty,
-            storedToken.User.FullName,
-            storedToken.User.Email ?? string.Empty,
-            jwtService.GenerateAccessToken(storedToken.User, roles),
-            replacement,
-            now.AddMinutes(15),
-            now.AddDays(7));
-        return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
     }
     private static async Task<IResult> Register(
         RegisterRequest request,
         IMediator mediator,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         var response = await mediator.Send(
             new RegisterCommand(request),
             cancellationToken);
 
-        return Results.Created(string.Empty, response);
+        return Results.Created(string.Empty, PrepareAuthResponse(response, httpContext, environment));
     }
 
     private static AuthResponseDto PrepareAuthResponse(
@@ -194,7 +149,7 @@ public static class AuthEndpoints
             {
                 HttpOnly = true,
                 Secure = true,
-                SameSite = SameSiteMode.None,
+                SameSite = SameSiteMode.Strict,
                 Path = "/api/v1/auth",
                 Expires = response.RefreshTokenExpiresAt,
                 MaxAge = response.RefreshTokenExpiresAt - DateTime.UtcNow,
@@ -204,6 +159,4 @@ public static class AuthEndpoints
         return response with { RefreshToken = string.Empty };
     }
 
-    private static string HashRefreshToken(string token) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 }

@@ -39,7 +39,7 @@ export default function LoginPage() {
         fullName: session.backendAuth.fullName,
         accessToken: session.backendAuth.accessToken,
         accessTokenExpiresAt: session.backendAuth.accessTokenExpiresAt,
-      });
+      }, "google");
       if (new URLSearchParams(window.location.search).get("google") === "success") {
         router.replace("/");
       }
@@ -77,6 +77,7 @@ export default function LoginPage() {
       const response = await fetch(emailLoginEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(values),
       });
       const responseText = await response.text();
@@ -102,7 +103,8 @@ export default function LoginPage() {
         throw new Error(message);
       }
 
-      if (!data.accessToken || !data.refreshToken || !data.accessTokenExpiresAt) {
+      if (!data.accessToken || !data.accessTokenExpiresAt ||
+          (process.env.NODE_ENV !== "production" && !data.refreshToken)) {
         throw new Error("Phản hồi đăng nhập thiếu thông tin phiên.");
       }
       saveAuthSession({

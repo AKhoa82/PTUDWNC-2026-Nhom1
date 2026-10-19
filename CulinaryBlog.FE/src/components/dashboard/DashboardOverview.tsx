@@ -7,6 +7,7 @@ import { ArrowRight, BookOpen, Clock3, FolderTree, PlusCircle, TrendingUp, Utens
 import { Badge } from "../ui/Badge";
 import { DashboardStatSkeleton, TableRowSkeleton } from "../ui/Skeleton";
 import { AUTH_CHANGED_EVENT, readAuthSession, type AuthSession } from "../../lib/auth-session";
+import { fetchWithAuth } from "../../lib/auth-session";
 
 type Recipe = {
   id: string;
@@ -26,10 +27,13 @@ const statusLabels: Record<string, string> = { Published: "Đã xuất bản", D
 
 async function getJson<T>(path: string, authenticated = false): Promise<T> {
   const token = authenticated ? localStorage.getItem("accessToken") : null;
-  const response = await fetch(`${apiUrl}${path}`, {
+  const options: RequestInit = {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     cache: "no-store",
-  });
+  };
+  const response = authenticated
+    ? await fetchWithAuth(`${apiUrl}${path}`, options)
+    : await fetch(`${apiUrl}${path}`, options);
   if (!response.ok) throw new Error("Không thể tải dữ liệu dashboard.");
   return response.json() as Promise<T>;
 }

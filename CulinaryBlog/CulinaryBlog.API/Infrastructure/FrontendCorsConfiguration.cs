@@ -27,7 +27,8 @@ public static class FrontendCorsConfiguration
         services.AddCors(options => options.AddPolicy(PolicyName, policy =>
             policy.WithOrigins(origins.Distinct(StringComparer.Ordinal).Select(origin => origin!).ToArray())
                 .AllowAnyHeader()
-                .AllowAnyMethod()));
+                .AllowAnyMethod()
+                .AllowCredentials()));
 
         return services;
     }

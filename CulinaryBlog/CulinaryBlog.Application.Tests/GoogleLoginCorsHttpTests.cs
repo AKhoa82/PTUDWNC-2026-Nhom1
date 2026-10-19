@@ -27,7 +27,7 @@ public class GoogleLoginCorsHttpTests
         using var allowed = await PreflightAsync(client, allowedOrigin);
         Assert.Equal(HttpStatusCode.NoContent, allowed.StatusCode);
         Assert.Equal(allowedOrigin, Assert.Single(allowed.Headers.GetValues("Access-Control-Allow-Origin")));
-        Assert.DoesNotContain("Access-Control-Allow-Credentials", allowed.Headers.Select(header => header.Key));
+        Assert.Equal("true", Assert.Single(allowed.Headers.GetValues("Access-Control-Allow-Credentials")));
 
         using var disallowed = await PreflightAsync(client, disallowedOrigin);
         Assert.False(disallowed.Headers.Contains("Access-Control-Allow-Origin"));
