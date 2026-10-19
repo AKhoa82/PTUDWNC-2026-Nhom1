@@ -1,28 +1,49 @@
-using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Application.Features.Auth.Login;
+using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Features.Auth.Register;
-using CulinaryBlog.Domain.Entities;
 using MediatR;
 using FluentValidation;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using CulinaryBlog.Domain.Entities;
 
 namespace CulinaryBlog.API.Endpoints;
 
 public static class AuthEndpoints
 {
+    public const string RefreshTokenCookieName = "culinaryblog_refresh";
+
     public static IEndpointRouteBuilder MapAuthEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/api/auth/register", Register);
-        endpoints.MapPost("/api/auth/login", Login);
-        // Frontend uses: {apiUrl}/v1/auth/google
-        endpoints.MapPost("/api/v1/auth/google", GoogleLogin);
-        endpoints.MapPost("/api/v1/auth/refresh", Refresh).AllowAnonymous();
+        var group = endpoints.MapGroup("/api/v1/auth");
+
+        group.MapPost("/register", Register).WithSummary("FR-AUTH-001: Đăng ký tài khoản");
+        group.MapPost("/login", Login).WithSummary("FR-AUTH-002: Đăng nhập");
+        group.MapPost("/google", GoogleLogin)
+            .WithSummary("FR-AUTH-003: Đăng nhập bằng Google")
+            .AllowAnonymous()
+            .Produces<AuthResponseDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status502BadGateway);
+        group.MapPost("/refresh", Refresh)
+            .WithSummary("FR-AUTH-004: Làm mới access token")
+            .AllowAnonymous()
+            .Produces<AuthResponseDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         return endpoints;
     }
@@ -32,256 +53,96 @@ public static class AuthEndpoints
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var response = await mediator.Send(
-                new LoginCommand(request),
-                cancellationToken);
+        var response = await mediator.Send(
+            new LoginCommand(request),
+            cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng nhập thành công.",
-                user = response
-            });
-        }
-        catch (AccountLockedException)
-        {
-            return Results.StatusCode(StatusCodes.Status423Locked);
-        }
-        catch (ValidationException ex)
-        {
-            return Results.ValidationProblem(ex.Errors
-                .GroupBy(error => error.PropertyName)
-                .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).ToArray()));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Results.Unauthorized();
-        }
-        catch (InvalidOperationException)
-        {
-            return Results.Problem(
-                title: "Database unavailable",
-                detail: "Không thể kết nối đến cơ sở dữ liệu. Vui lòng thử lại sau.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
+        return Results.Ok(response);
     }
 
     private static async Task<IResult> GoogleLogin(
         GoogleLoginRequest request,
-        UserManager<User> userManager,
-        RoleManager<IdentityRole<Guid>> roleManager,
-        IApplicationDbContext context,
-        IJwtService jwtService,
-        HttpClient httpClient,
-        IConfiguration configuration,
+        IMediator mediator,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.IdToken))
-        {
-            return Results.BadRequest(new { message = "Thiếu Google ID token." });
-        }
-
         try
         {
-            var verificationUrl = $"https://oauth2.googleapis.com/tokeninfo?id_token={Uri.EscapeDataString(request.IdToken)}";
-            using var verificationResponse = await httpClient.GetAsync(verificationUrl, cancellationToken);
+            var response = await mediator.Send(
+                new GoogleLoginCommand(request.IdToken),
+                cancellationToken);
 
-            if (!verificationResponse.IsSuccessStatusCode)
-            {
-                return Results.Json(
-                    new { message = "Google từ chối ID token. Kiểm tra Client ID của frontend và cấu hình Google Cloud." },
-                    statusCode: StatusCodes.Status401Unauthorized);
-            }
-
-            var payload = await verificationResponse.Content.ReadAsStringAsync(cancellationToken);
-            using var json = JsonDocument.Parse(payload);
-            var root = json.RootElement;
-
-            var configuredClientId = configuration["Google:ClientId"];
-            if (string.IsNullOrWhiteSpace(configuredClientId) ||
-                !root.TryGetProperty("aud", out var audienceElement) ||
-                !string.Equals(audienceElement.GetString(), configuredClientId, StringComparison.Ordinal))
-            {
-                return Results.Json(
-                    new { message = "Client ID trong token Google không khớp với Google:ClientId của API." },
-                    statusCode: StatusCodes.Status401Unauthorized);
-            }
-
-            if (!root.TryGetProperty("email", out var emailElement) ||
-                string.IsNullOrWhiteSpace(emailElement.GetString()))
-            {
-                return Results.BadRequest(new { message = "Google profile không hợp lệ." });
-            }
-
-            if (!root.TryGetProperty("email_verified", out var emailVerifiedElement) ||
-                !(emailVerifiedElement.ValueKind == JsonValueKind.True ||
-                  (emailVerifiedElement.ValueKind == JsonValueKind.String &&
-                   string.Equals(emailVerifiedElement.GetString(), "true", StringComparison.OrdinalIgnoreCase))))
-            {
-                return Results.Json(
-                    new { message = "Google chưa xác minh email của tài khoản này." },
-                    statusCode: StatusCodes.Status401Unauthorized);
-            }
-
-            var email = emailElement.GetString()!;
-            var providerKey = root.TryGetProperty("sub", out var subElement)
-                ? subElement.GetString()
-                : null;
-
-            if (string.IsNullOrWhiteSpace(providerKey))
-            {
-                return Results.BadRequest(new { message = "Google profile thiếu provider key." });
-            }
-
-            var existingUserByLogin = await userManager.FindByLoginAsync("Google", providerKey);
-            var user = existingUserByLogin ?? await userManager.FindByEmailAsync(email);
-
-            if (user is null)
-            {
-                var usernameBase = email.Split('@')[0].Trim();
-                var username = usernameBase;
-                var suffix = 1;
-
-                while (await userManager.FindByNameAsync(username) is not null)
-                {
-                    username = $"{usernameBase}{suffix++}";
-                }
-
-                user = new User
-                {
-                    Id = Guid.NewGuid(),
-                    UserName = username,
-                    Email = email,
-                    FullName = root.TryGetProperty("name", out var nameElement)
-                        ? nameElement.GetString() ?? email
-                        : email,
-                    EmailConfirmed = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                var createResult = await userManager.CreateAsync(
-                    user,
-                    Guid.NewGuid().ToString("N") + "Aa!1");
-
-                if (!createResult.Succeeded)
-                {
-                    throw new InvalidOperationException(
-                        string.Join("; ", createResult.Errors.Select(error => error.Description)));
-                }
-
-                var roleName = "Author";
-                if (!await roleManager.RoleExistsAsync(roleName))
-                {
-                    await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
-                }
-
-                await userManager.AddToRoleAsync(user, roleName);
-            }
-
-            var loginInfo = new UserLoginInfo("Google", providerKey, "Google");
-            if (await userManager.FindByLoginAsync(loginInfo.LoginProvider, loginInfo.ProviderKey) is null)
-            {
-                var addLoginResult = await userManager.AddLoginAsync(user, loginInfo);
-                if (!addLoginResult.Succeeded)
-                {
-                    throw new InvalidOperationException(
-                        string.Join("; ", addLoginResult.Errors.Select(error => error.Description)));
-                }
-            }
-
-            var now = DateTime.UtcNow;
-            var refreshToken = jwtService.GenerateRefreshToken();
-            context.RefreshTokens.Add(new RefreshToken
-            {
-                Id = Guid.NewGuid(),
-                UserId = user.Id,
-                Token = jwtService.HashRefreshToken(refreshToken),
-                ExpiresAt = now.AddDays(7)
-            });
-            await context.SaveChangesAsync(cancellationToken);
-
-            return Results.Ok(new
-            {
-                message = "Đăng nhập Google thành công.",
-                user = new AuthResponseDto(
-                    user.Id,
-                    user.UserName ?? string.Empty,
-                    user.FullName,
-                    user.Email ?? string.Empty,
-                    jwtService.GenerateAccessToken(user),
-                    refreshToken,
-                    now.AddMinutes(15),
-                    now.AddDays(7))
-            });
+            return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
         }
-        catch (InvalidOperationException ex)
+        catch (UnauthorizedAccessException ex)
         {
             return Results.Problem(
-                title: "Google login failed",
+                type: "about:blank",
+                title: "Unauthorized",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+        catch (GoogleProfileException ex)
+        {
+            return Results.Problem(
+                type: "about:blank",
+                title: "Bad Request",
                 detail: ex.Message,
                 statusCode: StatusCodes.Status400BadRequest);
+        }
+        catch (HttpRequestException)
+        {
+            return Results.Problem(
+                title: "Google verification unavailable",
+                detail: "Không thể liên hệ dịch vụ xác minh của Google. Vui lòng thử lại.",
+                statusCode: StatusCodes.Status502BadGateway);
         }
     }
 
     private static async Task<IResult> Refresh(
-        RefreshTokenRequest request,
-        UserManager<User> userManager,
-        IApplicationDbContext context,
-        IJwtService jwtService,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] RefreshTokenRequest? request,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
+        [FromServices] UserManager<User> userManager,
+        [FromServices] IApplicationDbContext context,
+        [FromServices] IJwtService jwtService,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var logger = loggerFactory.CreateLogger("CulinaryBlog.API.AuthEndpoints");
-        if (string.IsNullOrWhiteSpace(request.RefreshToken))
-        {
-            return Results.Unauthorized();
-        }
+        var rawToken = environment.IsProduction()
+            ? httpContext.Request.Cookies[RefreshTokenCookieName]
+            : request?.RefreshToken;
+        if (string.IsNullOrWhiteSpace(rawToken)) return Results.Unauthorized();
 
-        var rawToken = request.RefreshToken;
-        var tokenHash = jwtService.HashRefreshToken(rawToken);
+        var hash = HashRefreshToken(rawToken);
         var storedToken = await context.RefreshTokens
             .Include(token => token.User)
-            .SingleOrDefaultAsync(
-                token => token.Token == tokenHash || token.Token == rawToken,
-                cancellationToken);
+            .SingleOrDefaultAsync(token => token.TokenHash == hash, cancellationToken);
+        if (storedToken is null) return Results.Unauthorized();
 
-        if (storedToken is null)
-        {
-            return Results.Unauthorized();
-        }
-
+        var logger = loggerFactory.CreateLogger("CulinaryBlog.API.AuthEndpoints");
         if (storedToken.RevokedAt is not null)
         {
-            logger.LogWarning(
-                "Refresh token reuse detected for user {UserId}; rejecting the revoked token.",
-                storedToken.UserId);
+            logger.LogWarning("Refresh token reuse detected for user {UserId}", storedToken.UserId);
             return Results.Unauthorized();
         }
 
         var now = DateTime.UtcNow;
-        if (storedToken.ExpiresAt <= now ||
+        if (storedToken.ExpiresAt <= now || storedToken.User is null ||
             await userManager.IsLockedOutAsync(storedToken.User))
-        {
             return Results.Unauthorized();
-        }
 
-        var roles = await userManager.GetRolesAsync(storedToken.User);
-        var replacementRawToken = jwtService.GenerateRefreshToken();
-        var replacementTokenHash = jwtService.HashRefreshToken(replacementRawToken);
-
-        // RevokedAt is a concurrency token, so simultaneous refreshes can only
-        // rotate this row once. SaveChanges is transactional for relational DBs.
-        storedToken.Token = tokenHash; // Upgrade a legacy plaintext token, if any.
+        var replacement = jwtService.GenerateRefreshToken();
+        var replacementHash = HashRefreshToken(replacement);
         storedToken.RevokedAt = now;
-        storedToken.ReplacedByTokenHash = replacementTokenHash;
+        storedToken.ReplacedByTokenHash = replacementHash;
         context.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(),
             UserId = storedToken.UserId,
-            Token = replacementTokenHash,
-            ExpiresAt = now.AddDays(7),
-            CreatedAt = now
+            TokenHash = replacementHash,
+            ExpiresAt = now.AddDays(7)
         });
 
         try
@@ -290,58 +151,59 @@ public static class AuthEndpoints
         }
         catch (DbUpdateConcurrencyException)
         {
-            logger.LogWarning(
-                "Concurrent refresh token reuse detected for user {UserId}.",
-                storedToken.UserId);
+            logger.LogWarning("Concurrent refresh token reuse detected for user {UserId}", storedToken.UserId);
             return Results.Unauthorized();
         }
 
-        return Results.Ok(new
-        {
-            message = "Làm mới token thành công.",
-            user = new AuthResponseDto(
-                storedToken.User.Id,
-                storedToken.User.UserName ?? string.Empty,
-                storedToken.User.FullName,
-                storedToken.User.Email ?? string.Empty,
-                jwtService.GenerateAccessToken(storedToken.User, roles),
-                replacementRawToken,
-                now.AddMinutes(15),
-                now.AddDays(7))
-        });
+        var roles = await userManager.GetRolesAsync(storedToken.User);
+        var response = new AuthResponseDto(
+            storedToken.User.Id,
+            storedToken.User.UserName ?? string.Empty,
+            storedToken.User.FullName,
+            storedToken.User.Email ?? string.Empty,
+            jwtService.GenerateAccessToken(storedToken.User, roles),
+            replacement,
+            now.AddMinutes(15),
+            now.AddDays(7));
+        return Results.Ok(PrepareAuthResponse(response, httpContext, environment));
     }
-
     private static async Task<IResult> Register(
         RegisterRequest request,
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var userId = await mediator.Send(
-                new RegisterCommand(request),
-                cancellationToken);
+        var response = await mediator.Send(
+            new RegisterCommand(request),
+            cancellationToken);
 
-            return Results.Ok(new
-            {
-                message = "Đăng ký thành công.",
-                userId
-            });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new
-            {
-                message = ex.Message
-            });
-        }
-        catch (DbUpdateException ex) when (
-            ex.InnerException is PostgresException { SqlState: "23505" })
-        {
-            return Results.Conflict(new
-            {
-                message = "Email hoặc tên định danh đã được sử dụng."
-            });
-        }
+        return Results.Created(string.Empty, response);
     }
+
+    private static AuthResponseDto PrepareAuthResponse(
+        AuthResponseDto response,
+        HttpContext httpContext,
+        IWebHostEnvironment environment)
+    {
+        if (!environment.IsProduction())
+            return response;
+
+        httpContext.Response.Cookies.Append(
+            RefreshTokenCookieName,
+            response.RefreshToken,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Path = "/api/v1/auth",
+                Expires = response.RefreshTokenExpiresAt,
+                MaxAge = response.RefreshTokenExpiresAt - DateTime.UtcNow,
+                IsEssential = true
+            });
+
+        return response with { RefreshToken = string.Empty };
+    }
+
+    private static string HashRefreshToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 }

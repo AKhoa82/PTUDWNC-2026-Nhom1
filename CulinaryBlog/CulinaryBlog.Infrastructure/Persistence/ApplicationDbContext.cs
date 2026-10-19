@@ -1,4 +1,5 @@
 using CulinaryBlog.Application.Contracts.Persistence;
+using CulinaryBlog.Domain.Common;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -19,14 +20,36 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        UpdateAuditableEntities();
         UpdateRecipeListVersion();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        UpdateAuditableEntities();
         UpdateRecipeListVersion();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void UpdateAuditableEntities()
+    {
+        foreach (var entry in ChangeTracker.Entries<AuditableEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    if (entry.Entity.CreatedAt == default)
+                    {
+                        entry.Entity.CreatedAt = DateTime.UtcNow;
+                    }
+                    break;
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    Entry(entry.Entity).Property(x => x.CreatedAt).IsModified = false;
+                    break;
+            }
+        }
     }
 
     private void UpdateRecipeListVersion()
@@ -58,6 +81,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     public new DbSet<User> Users => Set<User>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeImage> RecipeImages => Set<RecipeImage>();
+    public DbSet<WelcomeEmailOutbox> WelcomeEmailOutboxes => Set<WelcomeEmailOutbox>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
     public DbSet<RecipeStep> RecipeSteps => Set<RecipeStep>();
@@ -77,8 +101,29 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<WelcomeEmailOutbox>(email =>
+        {
+            email.ToTable("WelcomeEmailOutbox");
+            email.HasKey(x => x.Id);
+            email.HasIndex(x => x.UserId).IsUnique();
+            email.HasIndex(x => x.Status);
+            email.Property(x => x.Email).HasMaxLength(256).IsRequired();
+            email.Property(x => x.FullName).HasMaxLength(256).IsRequired();
+            email.Property(x => x.HangfireJobId).HasMaxLength(100);
+            email.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.HasPostgresExtension("unaccent");
+        modelBuilder.HasPostgresExtension("pg_trgm");
+        modelBuilder.Entity<Recipe>().Property<NpgsqlTypes.NpgsqlTsVector>("SearchVector")
+            .HasColumnType("tsvector").ValueGeneratedOnAddOrUpdate();
+        modelBuilder.Entity<Recipe>().HasIndex("SearchVector")
+            .HasDatabaseName("IDX_Recipe_Search").HasMethod("GIN");
         modelBuilder.Entity<Recipe>().OwnsOne(r => r.Nutrition);
         modelBuilder.Entity<RecipeCacheInvalidation>().HasIndex(x => x.CreatedAt).HasFilter("\"ProcessedAt\" IS NULL");
+        modelBuilder.Entity<Recipe>().HasQueryFilter(recipe => !recipe.IsDeleted);
+        modelBuilder.Entity<Recipe>()
+            .HasIndex(recipe => recipe.IsDeleted)
+            .HasDatabaseName("IDX_Recipe_IsDeleted");
 
         modelBuilder.Entity<RecipeListVersion>(version =>
         {
@@ -92,20 +137,15 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
         modelBuilder.Entity<User>(user =>
         {
             user.Property(entity => entity.UserName).HasColumnName("Username");
+            user.Property(entity => entity.AvatarUrl).HasMaxLength(500);
             user.HasIndex(entity => entity.Email).IsUnique();
             user.HasIndex(entity => entity.UserName).IsUnique();
         });
 
-        modelBuilder.Entity<RefreshToken>(refreshToken =>
-        {
-            refreshToken.HasIndex(token => token.Token).IsUnique();
-            refreshToken.Property(token => token.RevokedAt).IsConcurrencyToken();
-            refreshToken.Property(token => token.ReplacedByTokenHash).HasMaxLength(64);
-            refreshToken.Property(token => token.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
-            refreshToken.HasOne(token => token.User)
-                .WithMany()
-                .HasForeignKey(token => token.UserId);
-        });
+        modelBuilder.Entity<RefreshToken>()
+            .HasOne(token => token.User)
+            .WithMany()
+            .HasForeignKey(token => token.UserId);
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }

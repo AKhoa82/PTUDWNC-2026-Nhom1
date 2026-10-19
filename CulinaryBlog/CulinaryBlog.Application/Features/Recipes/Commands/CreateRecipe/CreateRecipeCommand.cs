@@ -3,4 +3,4 @@ using MediatR;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 
-public record CreateRecipeCommand(CreateRecipeRequest Request, string? AuthorId) : IRequest<Guid>;
+public record CreateRecipeCommand(CreateRecipeRequest Request, string? AuthorId) : IRequest<RecipeDto>;

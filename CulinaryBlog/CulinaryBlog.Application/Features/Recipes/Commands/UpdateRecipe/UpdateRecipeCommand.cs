@@ -8,4 +8,4 @@ public record UpdateRecipeCommand(
     UpdateRecipeRequest Request, 
     string CurrentUserId, 
     bool IsAdmin
-) : IRequest<RecipeDetailDto>;
+) : IRequest<RecipeDto>;

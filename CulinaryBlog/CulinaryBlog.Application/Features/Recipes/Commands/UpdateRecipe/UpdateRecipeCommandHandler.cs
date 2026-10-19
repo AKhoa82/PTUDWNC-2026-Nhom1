@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe;
 
-public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, RecipeDetailDto>
+public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, RecipeDto>
 {
     private readonly IApplicationDbContext _context;
 
@@ -17,7 +17,7 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
         _context = context;
     }
 
-    public async Task<RecipeDetailDto> Handle(UpdateRecipeCommand request, CancellationToken cancellationToken)
+    public async Task<RecipeDto> Handle(UpdateRecipeCommand request, CancellationToken cancellationToken)
     {
         var recipe = await _context.Recipes
             .Include(r => r.Category)
@@ -31,20 +31,31 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
             throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
         }
 
-        // Kiểm tra quyền (Resource-Based Authorization)
-        if (recipe.AuthorId != request.CurrentUserId && !request.IsAdmin)
+        if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
+            throw new UnauthorizedAccessException("Invalid User ID");
+        if (recipe.AuthorId != parsedUserId && !request.IsAdmin)
         {
-            throw new UnauthorizedAccessException("Bạn không có quyền chỉnh sửa công thức này.");
+            throw new ForbiddenException("Bạn không có quyền chỉnh sửa công thức này.");
         }
 
-        // Kiểm tra danh mục
-        if (!await _context.Categories.AnyAsync(c => c.Id == request.Request.CategoryId, cancellationToken))
+        var category = await _context.Categories.FirstOrDefaultAsync(c => c.Id == request.Request.CategoryId, cancellationToken);
+        if (category == null)
         {
-            throw new NotFoundException($"Danh mục {request.Request.CategoryId} không tồn tại.");
+            throw new FluentValidation.ValidationException(new[] {
+                new FluentValidation.Results.ValidationFailure(
+                    "CategoryId",
+                    "Danh mục không tồn tại.")
+            });
         }
 
-        // Gán OriginalValue cho RowVersion để EF Core phát hiện thay đổi đồng thời
-        byte[] clientRowVersion = Convert.FromBase64String(request.Request.RowVersion);
+        if (!uint.TryParse(request.Request.RowVersion, out var clientRowVersion))
+        {
+            throw new FluentValidation.ValidationException(new[] {
+                new FluentValidation.Results.ValidationFailure(
+                    "RowVersion",
+                    "RowVersion không hợp lệ.")
+            });
+        }
         _context.Recipes.Entry(recipe).Property(r => r.RowVersion).OriginalValue = clientRowVersion;
 
         recipe.Update(
@@ -57,6 +68,7 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
             request.Request.Difficulty,
             request.Request.Instructions
         );
+        recipe.Category = category;
 
         if (request.Request.Nutrition != null)
         {
@@ -72,15 +84,16 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
 
         try
         {
-            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+            _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
             await _context.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Bắn ra 409 Conflict khi có xung đột dữ liệu
             throw new ConflictException("Dữ liệu đã bị thay đổi bởi người dùng khác. Vui lòng tải lại trang.");
         }
 
-        return recipe.Adapt<RecipeDetailDto>();
+        var result = recipe.Adapt<RecipeDto>();
+        result.RowVersion = recipe.RowVersion.ToString();
+        return result;
     }
 }

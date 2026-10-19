@@ -11,9 +11,11 @@ public record GetRecipesQuery(
     string? Keyword = null,
     Guid? CategoryId = null,
     RecipeDifficulty? Difficulty = null,
+    string? DifficultyRaw = null,
     int? MaxCookTime = null,
     string Sort = "-createdAt",
     string? CurrentUserId = null,
     bool IsAdmin = false,
-    int? MinServings = null
+    int? MinServings = null,
+    Guid? AuthorId = null
 ) : IRequest<PagedResult<RecipeSummaryDto>>;

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using CulinaryBlog.Domain.Common;
 using CulinaryBlog.Domain.Exceptions;
 
 namespace CulinaryBlog.Domain.Entities;
@@ -18,9 +19,8 @@ public enum RecipeDifficulty
     Expert = 4
 }
 
-public class Recipe
+public class Recipe : ConcurrentEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
@@ -36,16 +36,13 @@ public class Recipe
     public Guid CategoryId { get; set; }
     public Category Category { get; set; } = null!;
 
-    public string? AuthorId { get; set; }
+    public Guid AuthorId { get; set; }
+    public User Author { get; set; } = null!;
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
 
     public RecipeNutrition? Nutrition { get; set; }
 
-    [Timestamp]
-    public byte[]? RowVersion { get; set; }
 
     public ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();
     public ICollection<RecipeIngredient> Ingredients { get; set; } = new List<RecipeIngredient>();
@@ -69,7 +66,6 @@ public class Recipe
         Servings = servings;
         Difficulty = difficulty;
         Instructions = instructions;
-        UpdatedAt = DateTime.UtcNow;
         // Slug không cập nhật để giữ nguyên URL (tốt cho SEO)
     }
 
@@ -85,6 +81,9 @@ public class Recipe
 
     public void Publish()
     {
+        if (Status == RecipeStatus.Published)
+            return;
+
         if (Steps is null || Steps.Count == 0)
         {
             throw new DomainException("Recipe phải có ít nhất 1 bước thực hiện trước khi xuất bản.");
@@ -95,13 +94,38 @@ public class Recipe
         }
 
         Status = RecipeStatus.Published;
-        PublishedAt = DateTime.UtcNow;
-        UpdatedAt = DateTime.UtcNow;
+        PublishedAt ??= DateTime.UtcNow;
     }
 
     public void Unpublish()
     {
+        if (Status != RecipeStatus.Published)
+            return;
+
         Status = RecipeStatus.Draft;
-        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Archive() 
+    {
+        if (Status == RecipeStatus.Archived)
+            return;
+
+        Status = RecipeStatus.Archived;
+    }
+
+    public void Unarchive() 
+    {
+        if (Status != RecipeStatus.Archived)
+            return;
+
+        Status = RecipeStatus.Draft;
+    }
+
+    public void SoftDelete() 
+    {
+        if (IsDeleted)
+            return;
+
+        IsDeleted = true;
     }
 }

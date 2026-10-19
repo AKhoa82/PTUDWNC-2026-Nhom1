@@ -64,17 +64,14 @@ public static class RecipeImageEndpoints
     public static RouteGroupBuilder MapRecipeImageEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/recipes/{id:guid}/images")
-            .WithTags("Recipe Images").RequireAuthorization();
+            .WithTags("Recipe Images").RequireAuthorization("AuthorPolicy");
         group.AddEndpointFilter(async (context, next) =>
         {
-            try { return await next(context); }
-            catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
-            catch (RecipeImageValidationException ex)
+            try
             {
-                return Results.Problem(statusCode: 422, title: "Dữ liệu ảnh không hợp lệ.", detail: ex.Message);
+                return await next(context);
             }
-            catch (KeyNotFoundException) { return Results.NotFound(); }
-            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+
             catch (Exception ex) when (ex is MinioException or HttpRequestException or FileOperationUnavailableException ||
                 (ex is OperationCanceledException && !context.HttpContext.RequestAborted.IsCancellationRequested))
             {
@@ -82,11 +79,12 @@ public static class RecipeImageEndpoints
                     .CreateLogger("RecipeImageEndpoints").LogError(ex, "Recipe image storage operation failed");
                 return Results.Problem(statusCode: 503, title: "Dịch vụ lưu trữ tạm thời không khả dụng.");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
+                // Log unexpected errors; let GlobalExceptionHandler handle them
                 context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
-                    .CreateLogger("RecipeImageEndpoints").LogError(ex, "Recipe image operation failed");
-                return Results.Problem(statusCode: 500, title: "Không thể hoàn tất thao tác ảnh.");
+                    .CreateLogger("RecipeImageEndpoints").LogError(ex, "Unexpected error in RecipeImageEndpoints");
+                throw;
             }
         });
 
@@ -98,7 +96,18 @@ public static class RecipeImageEndpoints
                 UserId(user), user.IsInRole("Admin"), ct);
             await cache.InvalidateAsync();
             return Results.Created($"/api/v1/recipes/{id}/images/{result.ImageId}", result);
-        }).DisableAntiforgery().RequireRateLimiting("RecipeImageUpload").WithName("UploadRecipeImageV1");
+        })
+        .DisableAntiforgery()
+        .RequireRateLimiting("RecipeImageUpload")
+        .WithName("UploadRecipeImageV1")
+        .WithSummary("Tải lên hình ảnh")
+        .Produces<RecipeImageDto>(StatusCodes.Status201Created)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+        .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+        .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPatch("/{imageId:guid}", async (Guid id, Guid imageId,
             UpdateRecipeImageRequest request, ClaimsPrincipal user, RecipeImageService images,
@@ -108,7 +117,14 @@ public static class RecipeImageEndpoints
                 UserId(user), user.IsInRole("Admin"), ct);
             await cache.InvalidateAsync();
             return Results.Ok(result);
-        }).WithName("UpdateRecipeImageV1");
+        })
+        .WithName("UpdateRecipeImageV1")
+        .WithSummary("Cập nhật hình ảnh")
+        .Produces<RecipeImageDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapDelete("/{imageId:guid}", async (Guid id, Guid imageId,
             ClaimsPrincipal user, RecipeImageService images, RecipeImageCacheInvalidator cache, CancellationToken ct) =>
@@ -116,7 +132,14 @@ public static class RecipeImageEndpoints
             await images.DeleteAsync(id, imageId, UserId(user), user.IsInRole("Admin"), ct);
             await cache.InvalidateAsync();
             return Results.NoContent();
-        }).WithName("DeleteRecipeImageV1");
+        })
+        .WithName("DeleteRecipeImageV1")
+        .WithSummary("Xóa hình ảnh")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         return group;
     }
 

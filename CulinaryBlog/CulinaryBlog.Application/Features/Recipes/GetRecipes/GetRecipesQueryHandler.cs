@@ -36,6 +36,14 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         // Validation is owned by the MediatR ValidationBehavior.
         // Normalize once so ordering and cache identity have identical semantics.
         request = request with { Sort = NormalizeSort(request.Sort) };
+        // Parse raw difficulty string into enum if provided and valid.
+        var difficulty = request.Difficulty;
+        if (!string.IsNullOrWhiteSpace(request.DifficultyRaw))
+        {
+            if (Enum.TryParse<CulinaryBlog.Domain.Entities.RecipeDifficulty>(request.DifficultyRaw, true, out var diffEnum))
+                difficulty = diffEnum;
+        }
+        request = request with { Difficulty = difficulty };
         bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
         var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
         shouldCache &= version is not null;
@@ -68,9 +76,10 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         {
             if (!string.IsNullOrEmpty(request.CurrentUserId))
             {
+                var isParsed = Guid.TryParse(request.CurrentUserId, out var parsedCurrentUserId);
                 query = query.Where(r =>
                     r.Status == RecipeStatus.Published ||
-                    (r.Status != RecipeStatus.Published && r.AuthorId == request.CurrentUserId));
+                    (r.Status != RecipeStatus.Published && isParsed && r.AuthorId == parsedCurrentUserId));
             }
             else
             {
@@ -88,6 +97,9 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
 
         if (request.CategoryId.HasValue)
             query = query.Where(r => r.CategoryId == request.CategoryId.Value);
+
+        if (request.AuthorId.HasValue)
+            query = query.Where(r => r.AuthorId == request.AuthorId.Value);
 
         if (request.Difficulty.HasValue)
             query = query.Where(r => r.Difficulty == request.Difficulty.Value);
@@ -135,7 +147,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
                 Status             = r.Status.ToString(),
                 CategoryId         = r.CategoryId,
                 CategoryName       = r.Category.Name,
-                AuthorId           = r.AuthorId,
+                AuthorId = r.AuthorId,
                 CreatedAt          = r.CreatedAt,
                 UpdatedAt          = r.UpdatedAt,
                 PublishedAt        = r.PublishedAt
@@ -172,16 +184,16 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         var payload = JsonSerializer.SerializeToUtf8Bytes(new
         {
             q.Page, q.PageSize, q.Keyword, q.CategoryId, q.Difficulty,
-            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin
+            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin, q.AuthorId
         });
         // Version the format so legacy concatenated keys are never reused.
         return $"{CacheKeyPrefix}v2:{Convert.ToHexString(SHA256.HashData(payload))}";
     }
 
-    private static string NormalizeSort(string? sort) => sort switch
+    private static string NormalizeSort(string? sort) => sort?.Trim() switch
     {
         "createdAt" or "-createdAt" or "title" or "-title" or
-        "cookTime" or "-cookTime" or "publishedAt" or "-publishedAt" => sort,
+        "cookTime" or "-cookTime" or "publishedAt" or "-publishedAt" => sort.Trim(),
         _ => "-createdAt"
     };
 

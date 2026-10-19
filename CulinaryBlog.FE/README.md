@@ -17,6 +17,12 @@ API mặc định dùng `http://localhost:5018/api`. Có thể ghi đè bằng b
 NEXT_PUBLIC_API_URL=http://localhost:5018/api
 ```
 
+Để đăng nhập Google, sao chép `.env.local.example` thành `.env.local`, đặt
+`AUTH_SECRET`, `AUTH_GOOGLE_ID` và `AUTH_GOOGLE_SECRET` của ứng dụng OAuth.
+Trong Google Cloud Console, đăng ký redirect URI
+`http://localhost:3000/api/auth/callback/google`. Cấu hình `Google__ClientId`
+của API bằng đúng giá trị `AUTH_GOOGLE_ID` (có thể dùng biến môi trường).
+
 ## Kiểm tra production
 
 ```powershell

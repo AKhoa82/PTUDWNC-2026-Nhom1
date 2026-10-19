@@ -6,6 +6,7 @@ using CulinaryBlog.Domain.Entities;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using CulinaryBlog.Application.Common.Exceptions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Images;
 
@@ -69,7 +70,7 @@ public sealed class RecipeImageService(
                         await recovery.Db.SaveChangesAsync(recoveryTimeout.Token);
                     }
                     await recoveryTx.CommitAsync(recoveryTimeout.Token);
-                    if (uploadError is RecipeImageValidationException or UnauthorizedAccessException or KeyNotFoundException or ArgumentException)
+                    if (uploadError is RecipeImageValidationException or UnauthorizedAccessException or ForbiddenException or NotFoundException)
                         System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(uploadError).Throw();
                     throw new FileOperationUnavailableException("Upload did not complete; cleanup is scheduled.", uploadError);
                 }
@@ -112,8 +113,7 @@ public sealed class RecipeImageService(
             work.Db.RecipeImages.Add(image);
             storedFile.Status = StoredFileStatus.Active;
             storedFile.UploadExpiresAt = null;
-            recipe.UpdatedAt = DateTime.UtcNow;
-            work.Db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+            work.Db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
             await work.Db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             return Map(image);
@@ -133,7 +133,7 @@ public sealed class RecipeImageService(
         await using var transaction = await transactions.BeginAsync(recipeId, ct);
         var recipe = await GetAuthorizedRecipeAsync(db, recipeId, userId, isAdmin, ct);
         var image = recipe.Images.SingleOrDefault(item => item.Id == imageId)
-            ?? throw new KeyNotFoundException("Không tìm thấy ảnh trong công thức này.");
+            ?? throw new NotFoundException("Không tìm thấy ảnh trong công thức này.");
 
         if (request.IsPrimary == false && image.IsPrimary)
             throw new RecipeImageValidationException("Hãy đặt một ảnh khác làm ảnh chính thay vì bỏ ảnh chính hiện tại.");
@@ -148,8 +148,7 @@ public sealed class RecipeImageService(
             recipe.ImageUrl = image.OriginalUrl;
         }
 
-        recipe.UpdatedAt = DateTime.UtcNow;
-        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         logger.LogInformation("User {UserId} updated recipe image {ImageId} for {RecipeId} at {Timestamp}",
@@ -163,7 +162,7 @@ public sealed class RecipeImageService(
         await using var transaction = await transactions.BeginAsync(recipeId, ct);
         var recipe = await GetAuthorizedRecipeAsync(db, recipeId, userId, isAdmin, ct);
         var image = recipe.Images.SingleOrDefault(item => item.Id == imageId)
-            ?? throw new KeyNotFoundException("Không tìm thấy ảnh trong công thức này.");
+            ?? throw new NotFoundException("Không tìm thấy ảnh trong công thức này.");
         var storedFile = image.StoredFile;
         var wasPrimary = image.IsPrimary;
         recipe.Images.Remove(image);
@@ -183,8 +182,7 @@ public sealed class RecipeImageService(
             storedFile.DeletionRequestedAt ??= DateTime.UtcNow;
         }
 
-        recipe.UpdatedAt = DateTime.UtcNow;
-        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation());
+        db.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         if (storedFile is not null && storedFile.DeletedAt is null)
@@ -206,9 +204,9 @@ public sealed class RecipeImageService(
             throw new UnauthorizedAccessException("Tài khoản không hợp lệ.");
         var recipe = await db.Recipes.Include(item => item.Images).ThenInclude(image => image.StoredFile)
             .SingleOrDefaultAsync(item => item.Id == recipeId, ct)
-            ?? throw new KeyNotFoundException("Không tìm thấy công thức.");
-        if (!isAdmin && (!Guid.TryParse(recipe.AuthorId, out var ownerId) || ownerId != actorId))
-            throw new UnauthorizedAccessException("Bạn không có quyền quản lý ảnh của công thức này.");
+            ?? throw new NotFoundException("Không tìm thấy công thức.");
+        if (!isAdmin && recipe.AuthorId != actorId)
+            throw new ForbiddenException("Bạn không có quyền quản lý ảnh của công thức này.");
         return recipe;
     }
 
@@ -225,3 +223,4 @@ public sealed class RecipeImageService(
         image.Id, image.OriginalUrl, image.MediumUrl, image.ThumbnailUrl,
         image.AltText, image.IsPrimary, image.OrderIndex);
 }
+

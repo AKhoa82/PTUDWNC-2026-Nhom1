@@ -58,9 +58,9 @@ public sealed class StorageMaintenanceService(ApplicationDbContext db, IMinioCli
             }
             db.ChangeTracker.Clear();
         }
-        var owners = await db.Users.Select(x => x.Id.ToString()).ToListAsync(ct);
+        var owners = await db.Users.Select(x => x.Id).ToListAsync(ct);
         await foreach (var recipe in db.Recipes.AsNoTracking().Select(x => new { x.Id, x.AuthorId }).AsAsyncEnumerable().WithCancellation(ct))
-            if (!Guid.TryParse(recipe.AuthorId, out var author) || !owners.Contains(author.ToString()))
+            if (!owners.Contains(recipe.AuthorId))
                 await report.WriteLineAsync(JsonSerializer.Serialize(new { recipe.Id, recipe.AuthorId, result = "invalid-recipe-owner" }));
     }
 

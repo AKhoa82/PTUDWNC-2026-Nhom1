@@ -2,6 +2,7 @@ namespace CulinaryBlog.Application.Common.Models;
 
 public class PagedResult<T>
 {
+    public string? Message { get; init; }
     public IReadOnlyList<T> Items { get; init; } = [];
     public int TotalCount { get; init; }
     public int Page { get; init; }
