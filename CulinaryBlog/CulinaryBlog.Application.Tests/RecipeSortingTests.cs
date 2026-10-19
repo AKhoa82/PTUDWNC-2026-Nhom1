@@ -92,6 +92,7 @@ public sealed class RecipeSortingTests : IDisposable
         public DbSet<RecipeImage> RecipeImages => throw new NotSupportedException();
         public DbSet<RecipeIngredient> RecipeIngredients => throw new NotSupportedException();
         public DbSet<RecipeStep> RecipeSteps => throw new NotSupportedException();
+        public DbSet<WelcomeEmailOutbox> WelcomeEmailOutboxes => Set<WelcomeEmailOutbox>();
         public DbSet<RefreshToken> RefreshTokens => throw new NotSupportedException();
         public Task<string?> GetRecipeListVersionAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>("test-v1");
         protected override void OnConfiguring(DbContextOptionsBuilder options) => options.UseInMemoryDatabase(Guid.NewGuid().ToString());

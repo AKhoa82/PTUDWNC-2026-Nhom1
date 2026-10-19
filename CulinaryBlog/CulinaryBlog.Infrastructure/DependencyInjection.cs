@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Minio;
+using Microsoft.Extensions.Hosting;
 using Hangfire;
 using Hangfire.PostgreSql;
 using CulinaryBlog.Infrastructure.Jobs;
@@ -20,6 +21,18 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddOptions<SmtpOptions>()
+            .Bind(configuration.GetSection("Smtp"))
+            .Validate<IHostEnvironment>((options, environment) => options.IsValid(environment.IsDevelopment()),
+                "Configure valid Smtp settings and AppUrl; production requires TLS and HTTPS.")
+            .ValidateOnStart();
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddScoped<IWelcomeEmailQueue, HangfireWelcomeEmailQueue>();
+        services.AddScoped<IRegistrationTransactionFactory, RegistrationTransactionFactory>();
+        services.AddScoped<WelcomeEmailJob>();
+        services.AddScoped<WelcomeEmailReconciliationJob>();
+        services.AddSingleton<WelcomeEmailFailureFilter>();
+
         // 1. Cấu hình MinioOptions từ appsettings.json
         services.AddOptions<MinioOptions>()
             .Bind(configuration.GetSection(MinioOptions.SectionName))
@@ -64,7 +77,8 @@ public static class DependencyInjection
 
         var databaseConnection = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("DefaultConnection is required for Hangfire.");
-        services.AddHangfire(config => config
+        services.AddHangfire((provider, config) => config
+            .UseFilter(provider.GetRequiredService<WelcomeEmailFailureFilter>())
             .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
             .UseSimpleAssemblyNameTypeSerializer()
             .UseRecommendedSerializerSettings()
