@@ -595,6 +595,8 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletion
     "reconcile-file-deletions", job => job.ExecuteAsync(CancellationToken.None), "*/5 * * * *");
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
     "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<ImageResizeReconciliationJob>(
+    "reconcile-image-resizes", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
 
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<WelcomeEmailReconciliationJob>(
     "reconcile-welcome-emails", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");

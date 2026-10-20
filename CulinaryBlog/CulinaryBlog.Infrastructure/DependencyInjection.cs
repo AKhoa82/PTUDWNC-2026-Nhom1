@@ -74,6 +74,9 @@ public static class DependencyInjection
         services.AddScoped<CulinaryBlog.Application.Features.Recipes.SearchRecipes.IRecipeSearchService, RecipeSearchService>();
         services.AddScoped<DeleteStoredFileJob>();
         services.AddScoped<FileDeletionReconciliationJob>();
+        services.AddScoped<IImageResizeQueue, HangfireImageResizeQueue>();
+        services.AddScoped<ImageResizeJob>();
+        services.AddScoped<ImageResizeReconciliationJob>();
 
         var databaseConnection = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("DefaultConnection is required for Hangfire.");

@@ -211,6 +211,10 @@ namespace CulinaryBlog.Infrastructure.Migrations
                     b.Property<Guid>("RecipeId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ResizeJobId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<Guid?>("StoredFileId")
                         .HasColumnType("uuid");
 
@@ -222,6 +226,9 @@ namespace CulinaryBlog.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt")
+                        .HasFilter("\"ResizeJobId\" IS NULL AND \"StoredFileId\" IS NOT NULL");
 
                     b.HasIndex("RecipeId")
                         .IsUnique()
@@ -341,6 +348,7 @@ namespace CulinaryBlog.Infrastructure.Migrations
                         .HasColumnType("varchar(64)");
 
                     b.Property<DateTime?>("RevokedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("TokenHash")

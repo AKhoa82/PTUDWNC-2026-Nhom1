@@ -12,6 +12,8 @@ public sealed class RecipeImageConfiguration : IEntityTypeConfiguration<RecipeIm
         builder.Property(image => image.OriginalUrl).HasMaxLength(500).IsRequired();
         builder.Property(image => image.MediumUrl).HasMaxLength(500);
         builder.Property(image => image.ThumbnailUrl).HasMaxLength(500);
+        builder.Property(image => image.ResizeJobId).HasMaxLength(100);
+        builder.HasIndex(image => image.CreatedAt).HasFilter("\"ResizeJobId\" IS NULL AND \"StoredFileId\" IS NOT NULL");
         builder.Property(image => image.AltText).HasMaxLength(200);
         builder.HasOne(image => image.Recipe).WithMany(recipe => recipe.Images)
             .HasForeignKey(image => image.RecipeId).OnDelete(DeleteBehavior.Cascade);

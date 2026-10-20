@@ -4,6 +4,7 @@ using CulinaryBlog.Infrastructure.Persistence;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using CulinaryBlog.Infrastructure.Services;
 
 namespace CulinaryBlog.Infrastructure.Jobs;
 
@@ -24,10 +25,24 @@ public sealed class DeleteStoredFileJob(
             throw new InvalidOperationException("Cannot delete a file still attached to a recipe image.");
         if (file.BucketName is null || file.ObjectKey is null)
             throw new InvalidOperationException("Storage reference is unverified; run the backfill tool before retrying.");
-        try { await storage.DeleteAsync(new(file.BucketName, file.ObjectKey), ct); }
+        try
+        {
+            var original = new StorageObjectReference(file.BucketName, file.ObjectKey);
+
+            // Xóa cả hai biến thể nếu đây là ảnh recipe.
+            if (RecipeImageVariantKeys.TryCreate(original, out var medium, out var thumbnail))
+            {
+                await storage.DeleteAsync(medium, ct);
+                await storage.DeleteAsync(thumbnail, ct);
+            }
+
+            // Xóa ảnh gốc sau cùng.
+            await storage.DeleteAsync(original, ct);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "MinIO deletion failed for stored file {StoredFileId}", storedFileId);
+
             throw;
         }
         file.DeletedAt = DateTime.UtcNow;

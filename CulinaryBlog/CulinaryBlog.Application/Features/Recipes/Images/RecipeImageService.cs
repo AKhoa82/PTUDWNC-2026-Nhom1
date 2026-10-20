@@ -16,6 +16,7 @@ public sealed class RecipeImageService(
     IFileDeletionQueue deletionQueue,
     IRecipeImageTransactionFactory transactions,
     IFileLifecycleSessionFactory sessions,
+    IImageResizeQueue resizeQueue,
     ILogger<RecipeImageService> logger)
 {
     public async Task<RecipeImageDto> UploadAsync(
@@ -29,8 +30,11 @@ public sealed class RecipeImageService(
         if (url.Length > 500) throw new FileOperationUnavailableException("Public image URL exceeds 500 characters.");
         var intent = new StoredFile
         {
-            Url = url, SizeBytes = file.Length, BucketName = reference.BucketName,
-            ObjectKey = reference.ObjectKey, Status = StoredFileStatus.PendingUpload,
+            Url = url,
+            SizeBytes = file.Length,
+            BucketName = reference.BucketName,
+            ObjectKey = reference.ObjectKey,
+            Status = StoredFileStatus.PendingUpload,
             UploadExpiresAt = DateTime.UtcNow.AddHours(1)
         };
         await using (var reservation = sessions.Create())
@@ -84,6 +88,21 @@ public sealed class RecipeImageService(
             }
         }
         logger.LogInformation("User {UserId} uploaded recipe image {ImageId} for {RecipeId}", userId, result.ImageId, recipeId);
+
+        // FR-JOB-002: Chỉ enqueue sau khi ảnh gốc
+        // đã được upload và commit thành công.
+        try
+        {
+            var jobId = await resizeQueue.EnqueueAsync(result.ImageId, ct);
+
+            logger.LogInformation("Enqueued image resize job {JobId} for image {ImageId}", jobId, result.ImageId);
+        }
+        catch (Exception ex)
+        {
+            // Không trả lỗi upload nếu ảnh gốc đã commit.
+            logger.LogError(ex, "Failed to enqueue resize for image {ImageId}", result.ImageId);
+        }
+
         return result;
 
         async Task<RecipeImageDto> UploadAndCommitAsync()
@@ -106,8 +125,13 @@ public sealed class RecipeImageService(
             }
             var image = new RecipeImage
             {
-                Id = imageId, RecipeId = recipeId, StoredFileId = intent.Id, OriginalUrl = url,
-                AltText = NormalizeAltText(altText), IsPrimary = isPrimary, OrderIndex = lastIndex + 1
+                Id = imageId,
+                RecipeId = recipeId,
+                StoredFileId = intent.Id,
+                OriginalUrl = url,
+                AltText = NormalizeAltText(altText),
+                IsPrimary = isPrimary,
+                OrderIndex = lastIndex + 1
             };
             recipe.Images.Add(image);
             work.Db.RecipeImages.Add(image);
