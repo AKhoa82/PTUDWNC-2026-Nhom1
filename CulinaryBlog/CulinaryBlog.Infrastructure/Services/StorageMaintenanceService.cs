@@ -48,8 +48,13 @@ public sealed class StorageMaintenanceService(ApplicationDbContext db, IMinioCli
             var reference = Resolve(file.Url);
             var duplicate = reference != null && await db.StoredFiles.AnyAsync(x => x.Id != id &&
                 x.BucketName == reference.BucketName && x.ObjectKey == reference.ObjectKey, ct);
-            await report.WriteLineAsync(JsonSerializer.Serialize(new { file.Id, file.Url, reference,
-                result = reference == null ? "unresolved" : duplicate ? "duplicate-reference" : apply ? "apply" : "candidate" }));
+            await report.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                file.Id,
+                file.Url,
+                reference,
+                result = reference == null ? "unresolved" : duplicate ? "duplicate-reference" : apply ? "apply" : "candidate"
+            }));
             if (apply && reference != null && !duplicate)
             {
                 file.BucketName = reference.BucketName;
@@ -72,9 +77,39 @@ public sealed class StorageMaintenanceService(ApplicationDbContext db, IMinioCli
             storage.GetPublicUrl(new(bucket, "probe"));
             await foreach (var item in client.ListObjectsEnumAsync(new ListObjectsArgs().WithBucket(bucket).WithRecursive(true), ct))
             {
-                if (!await db.StoredFiles.AnyAsync(x => x.BucketName == bucket && x.ObjectKey == item.Key, ct))
-                    await report.WriteLineAsync(JsonSerializer.Serialize(new { bucket, objectKey = item.Key, item.Size,
-                        result = "untracked-candidate-not-approved-for-deletion" }));
+                var trackedOriginal = await db.StoredFiles
+                    .AnyAsync(x =>
+                                x.BucketName == bucket &&
+                                x.ObjectKey == item.Key, ct);
+
+                if (trackedOriginal)
+                    continue;
+
+                var trackedVariant = false;
+
+                if (item.Key.StartsWith("recipes/", StringComparison.Ordinal) &&
+                    (item.Key.EndsWith("-medium.webp", StringComparison.Ordinal) ||
+                     item.Key.EndsWith("-thumbnail.webp", StringComparison.Ordinal)))
+                {
+                    var url = storage.GetPublicUrl(new StorageObjectReference(bucket, item.Key));
+
+                    trackedVariant = await db.RecipeImages
+                        .AnyAsync(x =>
+                            x.MediumUrl == url ||
+                            x.ThumbnailUrl == url, ct);
+                }
+
+                if (!trackedVariant)
+                {
+                    await report.WriteLineAsync(
+                        JsonSerializer.Serialize(new
+                        {
+                            bucket,
+                            objectKey = item.Key,
+                            item.Size,
+                            result = "untracked-candidate-not-approved-for-deletion"
+                        }));
+                }
             }
         }
     }
