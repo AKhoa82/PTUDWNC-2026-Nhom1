@@ -30,9 +30,6 @@ public class CreateRecipeCommandValidator : AbstractValidator<CreateRecipeComman
         RuleFor(x => x.Request.Difficulty)
             .IsInEnum().WithMessage("Độ khó không hợp lệ.");
 
-        RuleFor(x => x.Request.Instructions)
-            .NotEmpty().WithMessage("Hướng dẫn không được để trống.");
-
         RuleFor(x => x.Request.Ingredients)
             .NotNull().WithMessage("Danh sách nguyên liệu không được để null.");
             

@@ -30,14 +30,16 @@ export type PagedRecipes = {
 export type RecipeIngredient = { id: string; name: string; quantity: number | null; unit: string | null; notes: string | null; sortOrder: number };
 export type RecipeStep = { id: string; stepNumber: number; title: string | null; description: string; durationMinutes: number | null; imageUrl: string | null };
 export type RecipeNutrition = { calories: number; protein: number; carbs: number; fat: number; fiber: number | null; sodium: number | null };
+export type RecipeImage = { imageId: string; originalUrl: string; mediumUrl: string | null; thumbnailUrl: string | null; isPrimary: boolean; altText: string | null };
 export type RecipeDetail = RecipeSummary & {
   instructions: string;
   rowVersion: string;
+  publishedAt: string | null;
   author: { id: string; userName: string; fullName: string } | null;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   nutrition: RecipeNutrition | null;
-  images: { imageId: string; originalUrl: string; mediumUrl: string | null; thumbnailUrl: string | null; isPrimary: boolean; altText: string | null }[];
+  images: RecipeImage[];
 };
 
 export const difficultyLabels: Record<string, string> = { Easy: "Dễ", Medium: "Trung bình", Hard: "Khó", Expert: "Chuyên gia" };

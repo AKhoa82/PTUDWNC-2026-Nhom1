@@ -17,5 +17,6 @@ public record GetRecipesQuery(
     string? CurrentUserId = null,
     bool IsAdmin = false,
     int? MinServings = null,
-    Guid? AuthorId = null
+    Guid? AuthorId = null,
+    string? StatusRaw = null
 ) : IRequest<PagedResult<RecipeSummaryDto>>;

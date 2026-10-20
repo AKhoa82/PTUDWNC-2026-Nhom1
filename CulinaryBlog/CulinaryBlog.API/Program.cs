@@ -245,7 +245,8 @@ app.MapGet("/api/v1/recipes", async (
     int? maxCookTime = null,
     int? minServings = null,
     string sort = "-createdAt",
-    Guid? authorId = null) =>
+    Guid? authorId = null,
+    string? status = null) =>
 {
 
         // Difficulty validation moved to GetRecipesQueryValidator; raw value handled in handler.
@@ -270,7 +271,8 @@ app.MapGet("/api/v1/recipes", async (
         Sort: sort,
         CurrentUserId: currentUserId,
         IsAdmin: isAdmin,
-        AuthorId: authorId
+        AuthorId: authorId,
+        StatusRaw: status
     );
 
     var result = await mediator.Send(query, cancellationToken);

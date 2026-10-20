@@ -69,6 +69,23 @@ public static class RecipeEndpoints
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
 
+        group.MapPatch("/{id:guid}/unarchive", async (
+            Guid id, ISender sender, ClaimsPrincipal user,
+            RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
+        {
+            var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, user.IsInRole("Admin"), true), ct);
+            await cacheStore.InvalidateAsync(cancellationToken: ct);
+            return Results.Ok(result);
+        })
+        .WithName("UnarchiveRecipe")
+        .WithSummary("Khôi phục công thức đã lưu trữ về bản nháp")
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<RecipeDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
         // PATCH /api/v1/recipes/{id}/archive - Lưu trữ công thức
         group.MapPatch("/{id:guid}/archive", async (
             Guid id,

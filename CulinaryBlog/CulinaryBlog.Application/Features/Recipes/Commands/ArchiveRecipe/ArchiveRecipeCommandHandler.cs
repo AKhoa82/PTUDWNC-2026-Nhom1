@@ -32,7 +32,8 @@ public class ArchiveRecipeCommandHandler : IRequestHandler<ArchiveRecipeCommand,
             throw new ForbiddenException("Bạn không có quyền lưu trữ công thức này.");
         }
 
-        recipe.Archive();
+        if (request.Unarchive) recipe.Unarchive();
+        else recipe.Archive();
 
         _context.Recipes.Update(recipe);
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });

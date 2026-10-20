@@ -73,6 +73,20 @@ public sealed class RecipeSortingTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Status_filter_applies_before_paging_and_does_not_expose_drafts_publicly()
+    {
+        var draft = await handler.Handle(new GetRecipesQuery(PageSize: 1, StatusRaw: "Draft", IsAdmin: true), default);
+        var published = await handler.Handle(new GetRecipesQuery(PageSize: 1, StatusRaw: "Published", IsAdmin: true), default);
+        var publicDraft = await handler.Handle(new GetRecipesQuery(StatusRaw: "Draft"), default);
+
+        Assert.Equal(1, draft.TotalCount);
+        Assert.Equal(Id(5), Assert.Single(draft.Items).Id);
+        Assert.Equal(4, published.TotalCount);
+        Assert.Empty(publicDraft.Items);
+        Assert.Equal(0, publicDraft.TotalCount);
+    }
+
     private static Guid Id(int n) => Guid.Parse($"00000000-0000-0000-0000-{n:000000000000}");
     private static Recipe Recipe(int n, string title, int minutes, Category category, RecipeStatus status = RecipeStatus.Published)
         => new() { Id = Id(n), Title = title, CookingTimeMinutes = minutes, Category = category,
