@@ -61,6 +61,18 @@ public sealed class RecipeRequirementTests
     }
 
     [Fact]
+    public void Create_accepts_draft_without_ingredients_steps_or_instructions()
+    {
+        var request = ValidCreateRequest();
+        request.Instructions = string.Empty;
+        request.Ingredients.Clear();
+        request.Steps.Clear();
+
+        Assert.True(new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString())).IsValid);
+    }
+
+    [Fact]
     public void Create_rejects_undefined_difficulty()
     {
         var request = ValidCreateRequest();
@@ -132,6 +144,7 @@ public sealed class RecipeRequirementTests
     [InlineData("publish")]
     [InlineData("unpublish")]
     [InlineData("archive")]
+    [InlineData("unarchive")]
     [InlineData("ingredient-add")]
     [InlineData("ingredient-update")]
     [InlineData("ingredient-delete")]
@@ -141,7 +154,8 @@ public sealed class RecipeRequirementTests
     public async Task Recipe_mutation_queues_detail_cache_invalidation(string operation)
     {
         await using var db = new RecipeAcceptanceContext();
-        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft : RecipeStatus.Published);
+        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft :
+            operation == "unarchive" ? RecipeStatus.Archived : RecipeStatus.Published);
         var userId = recipe.AuthorId.ToString();
         var ingredient = recipe.Ingredients.Single();
         var stepId = recipe.Steps.Single().Id;
@@ -164,6 +178,11 @@ public sealed class RecipeRequirementTests
             case "archive":
                 await new ArchiveRecipeCommandHandler(db)
                     .Handle(new ArchiveRecipeCommand(recipe.Id, userId, false), default);
+                break;
+            case "unarchive":
+                await new ArchiveRecipeCommandHandler(db)
+                    .Handle(new ArchiveRecipeCommand(recipe.Id, userId, false, true), default);
+                Assert.Equal(RecipeStatus.Draft, recipe.Status);
                 break;
             case "ingredient-add":
                 await new AddIngredientCommandHandler(db).Handle(
@@ -206,6 +225,7 @@ public sealed class RecipeRequirementTests
     [InlineData("publish")]
     [InlineData("unpublish")]
     [InlineData("archive")]
+    [InlineData("unarchive")]
     [InlineData("delete")]
     [InlineData("step-add")]
     [InlineData("step-update")]
@@ -216,7 +236,8 @@ public sealed class RecipeRequirementTests
     public async Task Authenticated_non_owner_receives_forbidden_error(string operation)
     {
         await using var db = new RecipeAcceptanceContext();
-        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft : RecipeStatus.Published);
+        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft :
+            operation == "unarchive" ? RecipeStatus.Archived : RecipeStatus.Published);
         var otherUserId = Guid.NewGuid().ToString();
         
 
@@ -235,6 +256,10 @@ public sealed class RecipeRequirementTests
                 case "archive":
                     await new ArchiveRecipeCommandHandler(db).Handle(
                         new ArchiveRecipeCommand(recipe.Id, otherUserId, false), default);
+                    break;
+                case "unarchive":
+                    await new ArchiveRecipeCommandHandler(db).Handle(
+                        new ArchiveRecipeCommand(recipe.Id, otherUserId, false, true), default);
                     break;
                 case "delete":
                     await new CulinaryBlog.Application.Features.Recipes.Commands.DeleteRecipe.DeleteRecipeCommandHandler(

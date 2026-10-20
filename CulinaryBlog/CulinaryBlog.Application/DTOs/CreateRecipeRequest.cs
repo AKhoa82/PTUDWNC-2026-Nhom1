@@ -25,7 +25,6 @@ public class CreateRecipeRequest
 
     public RecipeDifficulty Difficulty { get; set; } = RecipeDifficulty.Easy;
 
-    [Required(ErrorMessage = "Hướng dẫn không được để trống")]
     public string Instructions { get; set; } = string.Empty;
 
     [Required]

@@ -3,4 +3,4 @@ using CulinaryBlog.Application.DTOs;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.ArchiveRecipe;
 
-public record ArchiveRecipeCommand(Guid Id, string CurrentUserId, bool IsAdmin) : IRequest<RecipeDto>;
+public record ArchiveRecipeCommand(Guid Id, string CurrentUserId, bool IsAdmin, bool Unarchive = false) : IRequest<RecipeDto>;

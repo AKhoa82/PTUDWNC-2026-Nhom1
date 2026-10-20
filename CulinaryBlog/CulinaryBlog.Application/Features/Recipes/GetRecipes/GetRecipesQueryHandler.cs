@@ -101,6 +101,10 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         if (request.AuthorId.HasValue)
             query = query.Where(r => r.AuthorId == request.AuthorId.Value);
 
+        if (!string.IsNullOrWhiteSpace(request.StatusRaw) &&
+            Enum.TryParse<RecipeStatus>(request.StatusRaw.Trim(), true, out var status))
+            query = query.Where(r => r.Status == status);
+
         if (request.Difficulty.HasValue)
             query = query.Where(r => r.Difficulty == request.Difficulty.Value);
 
@@ -184,7 +188,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         var payload = JsonSerializer.SerializeToUtf8Bytes(new
         {
             q.Page, q.PageSize, q.Keyword, q.CategoryId, q.Difficulty,
-            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin, q.AuthorId
+            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin, q.AuthorId, q.StatusRaw
         });
         // Version the format so legacy concatenated keys are never reused.
         return $"{CacheKeyPrefix}v2:{Convert.ToHexString(SHA256.HashData(payload))}";

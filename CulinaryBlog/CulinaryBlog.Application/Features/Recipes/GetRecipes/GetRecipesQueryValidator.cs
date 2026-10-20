@@ -29,6 +29,10 @@ public sealed class GetRecipesQueryValidator : AbstractValidator<GetRecipesQuery
             })
             .WithMessage(
                 "difficulty phải là một trong: Easy, Medium, Hard, Expert.");
+        RuleFor(query => query.StatusRaw)
+            .Must(value => string.IsNullOrWhiteSpace(value) || Enum.GetNames<RecipeStatus>()
+                .Any(name => name.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase)))
+            .WithMessage("status phải là một trong: Draft, Published, Archived.");
         RuleFor(query => query.Page).GreaterThanOrEqualTo(1);
         RuleFor(query => query.PageSize).InclusiveBetween(1, 50);
     }
