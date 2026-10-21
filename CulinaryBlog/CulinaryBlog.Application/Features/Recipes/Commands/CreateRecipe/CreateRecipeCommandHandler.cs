@@ -123,6 +123,12 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         var stringBuilder = new StringBuilder();
         foreach (var c in normalizedString)
         {
+            if (c is 'đ' or 'Đ')
+            {
+                stringBuilder.Append('d');
+                continue;
+            }
+
             var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
             if (unicodeCategory != UnicodeCategory.NonSpacingMark)
             {

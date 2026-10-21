@@ -488,6 +488,32 @@ public sealed class RecipeRequirementTests
     }
 
     [Fact]
+    public async Task Create_preserves_vietnamese_d_in_slug_and_suffixes_duplicates()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        db.Users.Add(new User { Id = authorId, UserName = "testuser", FullName = "Test User" });
+        var category = new Category { Id = Guid.NewGuid(), Name = "Test Category", Slug = "test" };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var request = ValidCreateRequest();
+        request.CategoryId = category.Id;
+        request.Title = "Đậu hũ chiên";
+
+        var handler = new CreateRecipeCommandHandler(db);
+        var first = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+        var duplicate = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        request.Title = "Bún đậu mắm tôm";
+        var lowercase = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        Assert.Equal("dau-hu-chien", first.Slug);
+        Assert.Equal("dau-hu-chien-1", duplicate.Slug);
+        Assert.Equal("bun-dau-mam-tom", lowercase.Slug);
+    }
+
+    [Fact]
     public async Task Create_with_Nutrition_maps_all_6_fields()
     {
         await using var db = new RecipeAcceptanceContext();
