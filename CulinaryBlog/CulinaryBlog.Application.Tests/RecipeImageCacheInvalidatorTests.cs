@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.OutputCaching;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Moq.EntityFrameworkCore;
@@ -18,7 +17,7 @@ namespace CulinaryBlog.Application.Tests
     public class RecipeImageCacheInvalidatorTests
     {
         [Fact]
-        public async Task ProcessAsync_Evicts_Recipes_And_DynamicTags_And_Redis()
+        public async Task ProcessAsync_Evicts_Recipes_And_DynamicTags()
         {
             // Arrange
             var pendingRecords = new List<RecipeCacheInvalidation>
@@ -33,12 +32,9 @@ namespace CulinaryBlog.Application.Tests
             dbMock.Setup(db => db.RecipeCacheInvalidations).ReturnsDbSet(pendingRecords);
 
             var outputCacheMock = new Mock<IOutputCacheStore>();
-            var distributedCacheMock = new Mock<IDistributedCache>();
-
             var invalidator = new RecipeImageCacheInvalidator(
                 dbMock.Object, 
                 outputCacheMock.Object, 
-                distributedCacheMock.Object, 
                 NullLogger<RecipeImageCacheInvalidator>.Instance);
 
             // Act
@@ -50,12 +46,6 @@ namespace CulinaryBlog.Application.Tests
             outputCacheMock.Verify(x => x.EvictByTagAsync("recipe:slug-b", It.IsAny<CancellationToken>()), Times.Once);
             outputCacheMock.Verify(x => x.EvictByTagAsync("recipe:", It.IsAny<CancellationToken>()), Times.Never);
             outputCacheMock.Verify(x => x.EvictByTagAsync(It.IsRegex("^recipe:null$"), It.IsAny<CancellationToken>()), Times.Never);
-
-            distributedCacheMock.Verify(x => x.SetAsync(
-                "recipes:list:version", 
-                It.IsAny<byte[]>(), 
-                It.IsAny<DistributedCacheEntryOptions>(), 
-                It.IsAny<CancellationToken>()), Times.Once);
 
             Assert.All(pendingRecords, r => Assert.NotNull(r.ProcessedAt));
             dbMock.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
@@ -76,12 +66,9 @@ namespace CulinaryBlog.Application.Tests
             outputCacheMock.Setup(x => x.EvictByTagAsync("recipes", It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new Exception("Redis failure"));
 
-            var distributedCacheMock = new Mock<IDistributedCache>();
-
             var invalidator = new RecipeImageCacheInvalidator(
                 dbMock.Object, 
                 outputCacheMock.Object, 
-                distributedCacheMock.Object, 
                 NullLogger<RecipeImageCacheInvalidator>.Instance);
 
             await Assert.ThrowsAsync<Exception>(() => invalidator.ProcessAsync(CancellationToken.None));
