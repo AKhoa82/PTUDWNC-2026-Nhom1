@@ -2,9 +2,6 @@ using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.Features.Recipes.GetRecipes;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace CulinaryBlog.Application.Tests;
@@ -12,7 +9,6 @@ namespace CulinaryBlog.Application.Tests;
 public sealed class RecipeSortingTests : IDisposable
 {
     private readonly TestContext context = new();
-    private readonly MemoryDistributedCache cache = new(Options.Create(new MemoryDistributedCacheOptions()));
     private readonly GetRecipesQueryHandler handler;
 
     public RecipeSortingTests()
@@ -24,7 +20,7 @@ public sealed class RecipeSortingTests : IDisposable
             Recipe(4, "Delta", 10, category), Recipe(2, "Alpha", 20, category),
             Recipe(5, "Hidden", 1, category, RecipeStatus.Draft));
         context.SaveChanges();
-        handler = new(context, cache);
+        handler = new(context);
     }
 
     [Theory]
@@ -60,7 +56,7 @@ public sealed class RecipeSortingTests : IDisposable
     }
 
     [Fact]
-    public async Task Sort_combines_with_filters_and_cache_does_not_mix_directions()
+    public async Task Sort_combines_with_filters_without_mixing_directions()
     {
         var query = new GetRecipesQuery(Keyword: "a", MaxCookTime: 20, MinServings: 2,
             CategoryId: context.Recipes.First().CategoryId, Difficulty: RecipeDifficulty.Easy, Sort: "title");

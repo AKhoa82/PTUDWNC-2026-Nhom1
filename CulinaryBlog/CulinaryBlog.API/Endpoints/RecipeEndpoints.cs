@@ -32,7 +32,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new PublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })
@@ -57,7 +57,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new UnpublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })
@@ -75,7 +75,7 @@ public static class RecipeEndpoints
         {
             var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
             var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, user.IsInRole("Admin"), true), ct);
-            await cacheStore.InvalidateAsync(cancellationToken: ct);
+            await cacheStore.InvalidateAsync(result.Slug, ct);
             return Results.Ok(result);
         })
         .WithName("UnarchiveRecipe")
@@ -98,7 +98,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })

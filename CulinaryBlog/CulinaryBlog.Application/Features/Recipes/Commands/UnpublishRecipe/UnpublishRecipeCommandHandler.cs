@@ -31,9 +31,15 @@ public class UnpublishRecipeCommandHandler : IRequestHandler<UnpublishRecipeComm
             throw new ForbiddenException("Bạn không có quyền hủy xuất bản công thức này.");
         }
 
+        if (recipe.Status != RecipeStatus.Published)
+        {
+            var unchanged = recipe.Adapt<RecipeDto>();
+            unchanged.RowVersion = recipe.RowVersion.ToString();
+            return unchanged;
+        }
+
         recipe.Unpublish();
 
-        _context.Recipes.Update(recipe);
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
 

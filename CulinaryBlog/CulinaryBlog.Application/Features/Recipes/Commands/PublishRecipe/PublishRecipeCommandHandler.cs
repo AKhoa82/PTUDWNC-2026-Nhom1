@@ -38,11 +38,17 @@ public class PublishRecipeCommandHandler : IRequestHandler<PublishRecipeCommand,
             throw new ForbiddenException("Bạn không có quyền xuất bản công thức này.");
         }
 
+        if (recipe.Status == RecipeStatus.Published)
+        {
+            var unchanged = recipe.Adapt<RecipeDto>();
+            unchanged.RowVersion = recipe.RowVersion.ToString();
+            return unchanged;
+        }
+
         // 3. Thực thi nghiệp vụ domain
         recipe.Publish();
 
         // 4. Lưu thay đổi
-        _context.Recipes.Update(recipe);
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(ct);
         if (transaction is not null)

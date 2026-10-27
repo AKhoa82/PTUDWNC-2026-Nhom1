@@ -1,32 +1,19 @@
-using System.Text.Json;
-using System.Security.Cryptography;
 using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CulinaryBlog.Application.Features.Recipes.GetRecipes;
 
 public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResult<RecipeSummaryDto>>
 {
     private readonly IApplicationDbContext _context;
-    private readonly IDistributedCache _cache;
-    private readonly ILogger<GetRecipesQueryHandler> _logger;
 
-    public const string CacheKeyPrefix = "recipes:list:";
-    public const string CacheVersionKey = "recipes:list:version";
-
-    public GetRecipesQueryHandler(IApplicationDbContext context, IDistributedCache cache,
-        ILogger<GetRecipesQueryHandler>? logger = null)
+    public GetRecipesQueryHandler(IApplicationDbContext context)
     {
         _context = context;
-        _cache = cache;
-        _logger = logger ?? NullLogger<GetRecipesQueryHandler>.Instance;
     }
 
     public async Task<PagedResult<RecipeSummaryDto>> Handle(
@@ -44,29 +31,6 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
                 difficulty = diffEnum;
         }
         request = request with { Difficulty = difficulty };
-        bool shouldCache = string.IsNullOrEmpty(request.CurrentUserId) && !request.IsAdmin;
-        var version = shouldCache ? await _context.GetRecipeListVersionAsync(cancellationToken) : null;
-        shouldCache &= version is not null;
-        var cacheKey = $"{BuildCacheKey(request)}:v{version}";
-        
-        if (shouldCache)
-        {
-            try
-            {
-                var cachedJson = await _cache.GetStringAsync(cacheKey, cancellationToken);
-                if (!string.IsNullOrEmpty(cachedJson))
-                {
-                    var cached = JsonSerializer.Deserialize<PagedResult<RecipeSummaryDto>>(cachedJson);
-                    if (cached is not null) return cached;
-                }
-            }
-            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogWarning(exception, "Recipe list cache read failed; querying the database.");
-                shouldCache = false;
-            }
-        }
-
         var query = _context.Recipes
             .AsNoTracking()
             .Include(r => r.Category)
@@ -158,40 +122,7 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             })
             .ToListAsync(cancellationToken);
 
-        var result = PagedResult<RecipeSummaryDto>.Create(items, totalCount, request.Page, request.PageSize);
-
-        if (shouldCache)
-        {
-            var cacheOptions = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15)
-            };
-            try
-            {
-                await _cache.SetStringAsync(
-                    cacheKey,
-                    JsonSerializer.Serialize(result),
-                    cacheOptions,
-                    cancellationToken);
-            }
-            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogWarning(exception, "Recipe list cache write failed; returning database results.");
-            }
-        }
-
-        return result;
-    }
-
-    private static string BuildCacheKey(GetRecipesQuery q)
-    {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            q.Page, q.PageSize, q.Keyword, q.CategoryId, q.Difficulty,
-            q.MaxCookTime, q.MinServings, q.Sort, q.CurrentUserId, q.IsAdmin, q.AuthorId, q.StatusRaw
-        });
-        // Version the format so legacy concatenated keys are never reused.
-        return $"{CacheKeyPrefix}v2:{Convert.ToHexString(SHA256.HashData(payload))}";
+        return PagedResult<RecipeSummaryDto>.Create(items, totalCount, request.Page, request.PageSize);
     }
 
     private static string NormalizeSort(string? sort) => sort?.Trim() switch
@@ -201,5 +132,4 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
         _ => "-createdAt"
     };
 
-    public static string GetCacheKeyPrefix() => CacheKeyPrefix;
 }

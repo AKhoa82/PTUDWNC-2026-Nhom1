@@ -81,7 +81,10 @@ public class DeleteRecipeStepCommandHandler : IRequestHandler<DeleteRecipeStepCo
         // Phase 2: Shift back to correct numbers.
         foreach (var step in remainingSteps)
         {
+            var previousNumber = step.StepNumber - offset;
             step.StepNumber -= (offset + 1);
+            if (step.Title == $"Bước {previousNumber}")
+                step.Title = $"Bước {step.StepNumber}";
         }
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);

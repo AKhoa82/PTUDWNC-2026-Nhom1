@@ -125,6 +125,8 @@ builder.Services.AddStackExchangeRedisOutputCache(options =>
 });
 builder.Services.AddOutputCache(options =>
 {
+    options.AddPolicy("RecipeList", builder =>
+        builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeListCachePolicy>());
     options.AddPolicy("RecipeDetail", builder => 
         builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeDetailCachePolicy>());
 });
@@ -283,6 +285,7 @@ app.MapGet("/api/v1/recipes", async (
 .WithSummary("Danh sách công thức")
 .Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.CacheOutput("RecipeList")
 .AllowAnonymous();
 
 app.MapGet("/api/v1/recipes/search", async (

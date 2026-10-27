@@ -1,3 +1,4 @@
+
 # CulinaryBlog Frontend
 
 Frontend sử dụng Next.js App Router, TypeScript và Tailwind CSS.
@@ -30,3 +31,19 @@ npm run lint
 npm run build
 npm run start
 ```
+
+## Kiểm thử E2E công thức
+
+Dùng database thử nghiệm riêng. Chạy API ở `http://localhost:5018` với PostgreSQL,
+Redis và tài khoản Admin phát triển (`DevAdmin__Password`); chạy frontend ở
+`http://localhost:3000`. Sau đó:
+
+```powershell
+$env:E2E_ADMIN_EMAIL = 'admin@culinaryblog.local'
+$env:E2E_ADMIN_PASSWORD = '<giá trị DevAdmin__Password>'
+npm run test:e2e
+```
+
+Có thể đổi địa chỉ bằng `E2E_API_URL` (mặc định
+`http://127.0.0.1:5018/api`) và `E2E_WEB_URL` (mặc định
+`http://localhost:3000`). Kiểm thử tạo và cập nhật công thức thật trong database thử nghiệm.
