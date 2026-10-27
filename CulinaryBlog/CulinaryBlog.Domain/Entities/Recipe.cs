@@ -85,6 +85,9 @@ public class Recipe : ConcurrentEntity
         if (Status == RecipeStatus.Published)
             return;
 
+        if (Status != RecipeStatus.Draft)
+            throw new DomainException("Chỉ có thể xuất bản công thức ở trạng thái bản nháp.");
+
         if (Steps is null || Steps.Count == 0)
         {
             throw new DomainException("Recipe phải có ít nhất 1 bước thực hiện trước khi xuất bản.");

@@ -32,7 +32,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new PublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })
@@ -57,7 +57,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new UnpublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })
