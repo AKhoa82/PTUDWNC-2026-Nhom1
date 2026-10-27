@@ -23,7 +23,7 @@ public class Recipe : ConcurrentEntity
 {
     public string Title { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
-    public string? Description { get; set; }
+    public string Description { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public int PrepTimeMinutes { get; set; }
     public int CookingTimeMinutes { get; set; }
@@ -59,7 +59,8 @@ public class Recipe : ConcurrentEntity
         string instructions)
     {
         Title = title.Trim();
-        Description = description?.Trim();
+        if (description is not null)
+            Description = description.Trim();
         CategoryId = categoryId;
         PrepTimeMinutes = prepTimeMinutes;
         CookingTimeMinutes = cookingTimeMinutes;
@@ -83,6 +84,9 @@ public class Recipe : ConcurrentEntity
     {
         if (Status == RecipeStatus.Published)
             return;
+
+        if (Status != RecipeStatus.Draft)
+            throw new DomainException("Chỉ có thể xuất bản công thức ở trạng thái bản nháp.");
 
         if (Steps is null || Steps.Count == 0)
         {

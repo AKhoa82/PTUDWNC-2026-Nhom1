@@ -2,9 +2,6 @@ using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.Features.Recipes.GetRecipes;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace CulinaryBlog.Application.Tests;
@@ -12,7 +9,6 @@ namespace CulinaryBlog.Application.Tests;
 public sealed class RecipeSortingTests : IDisposable
 {
     private readonly TestContext context = new();
-    private readonly MemoryDistributedCache cache = new(Options.Create(new MemoryDistributedCacheOptions()));
     private readonly GetRecipesQueryHandler handler;
 
     public RecipeSortingTests()
@@ -24,7 +20,7 @@ public sealed class RecipeSortingTests : IDisposable
             Recipe(4, "Delta", 10, category), Recipe(2, "Alpha", 20, category),
             Recipe(5, "Hidden", 1, category, RecipeStatus.Draft));
         context.SaveChanges();
-        handler = new(context, cache);
+        handler = new(context);
     }
 
     [Theory]
@@ -60,7 +56,7 @@ public sealed class RecipeSortingTests : IDisposable
     }
 
     [Fact]
-    public async Task Sort_combines_with_filters_and_cache_does_not_mix_directions()
+    public async Task Sort_combines_with_filters_without_mixing_directions()
     {
         var query = new GetRecipesQuery(Keyword: "a", MaxCookTime: 20, MinServings: 2,
             CategoryId: context.Recipes.First().CategoryId, Difficulty: RecipeDifficulty.Easy, Sort: "title");
@@ -71,6 +67,20 @@ public sealed class RecipeSortingTests : IDisposable
             Assert.Equal(expected, result.Items.Select(r => r.Id));
             Assert.Equal(3, result.TotalCount);
         }
+    }
+
+    [Fact]
+    public async Task Status_filter_applies_before_paging_and_does_not_expose_drafts_publicly()
+    {
+        var draft = await handler.Handle(new GetRecipesQuery(PageSize: 1, StatusRaw: "Draft", IsAdmin: true), default);
+        var published = await handler.Handle(new GetRecipesQuery(PageSize: 1, StatusRaw: "Published", IsAdmin: true), default);
+        var publicDraft = await handler.Handle(new GetRecipesQuery(StatusRaw: "Draft"), default);
+
+        Assert.Equal(1, draft.TotalCount);
+        Assert.Equal(Id(5), Assert.Single(draft.Items).Id);
+        Assert.Equal(4, published.TotalCount);
+        Assert.Empty(publicDraft.Items);
+        Assert.Equal(0, publicDraft.TotalCount);
     }
 
     private static Guid Id(int n) => Guid.Parse($"00000000-0000-0000-0000-{n:000000000000}");
@@ -92,6 +102,7 @@ public sealed class RecipeSortingTests : IDisposable
         public DbSet<RecipeImage> RecipeImages => throw new NotSupportedException();
         public DbSet<RecipeIngredient> RecipeIngredients => throw new NotSupportedException();
         public DbSet<RecipeStep> RecipeSteps => throw new NotSupportedException();
+        public DbSet<WelcomeEmailOutbox> WelcomeEmailOutboxes => Set<WelcomeEmailOutbox>();
         public DbSet<RefreshToken> RefreshTokens => throw new NotSupportedException();
         public Task<string?> GetRecipeListVersionAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>("test-v1");
         protected override void OnConfiguring(DbContextOptionsBuilder options) => options.UseInMemoryDatabase(Guid.NewGuid().ToString());

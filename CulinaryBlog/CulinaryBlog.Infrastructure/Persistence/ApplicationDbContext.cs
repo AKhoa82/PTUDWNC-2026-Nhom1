@@ -81,6 +81,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     public new DbSet<User> Users => Set<User>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeImage> RecipeImages => Set<RecipeImage>();
+    public DbSet<WelcomeEmailOutbox> WelcomeEmailOutboxes => Set<WelcomeEmailOutbox>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
     public DbSet<RecipeStep> RecipeSteps => Set<RecipeStep>();
@@ -100,6 +101,17 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<WelcomeEmailOutbox>(email =>
+        {
+            email.ToTable("WelcomeEmailOutbox");
+            email.HasKey(x => x.Id);
+            email.HasIndex(x => x.UserId).IsUnique();
+            email.HasIndex(x => x.Status);
+            email.Property(x => x.Email).HasMaxLength(256).IsRequired();
+            email.Property(x => x.FullName).HasMaxLength(256).IsRequired();
+            email.Property(x => x.HangfireJobId).HasMaxLength(100);
+            email.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.HasPostgresExtension("unaccent");
         modelBuilder.HasPostgresExtension("pg_trgm");
         modelBuilder.Entity<Recipe>().Property<NpgsqlTypes.NpgsqlTsVector>("SearchVector")
@@ -112,7 +124,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
         modelBuilder.Entity<Recipe>()
             .HasIndex(recipe => recipe.IsDeleted)
             .HasDatabaseName("IDX_Recipe_IsDeleted");
-            
+
         modelBuilder.Entity<RecipeListVersion>(version =>
         {
             version.ToTable("RecipeListVersions");
@@ -125,6 +137,7 @@ public class ApplicationDbContext : IdentityDbContext<User, IdentityRole<Guid>, 
         modelBuilder.Entity<User>(user =>
         {
             user.Property(entity => entity.UserName).HasColumnName("Username");
+            user.Property(entity => entity.AvatarUrl).HasMaxLength(500);
             user.HasIndex(entity => entity.Email).IsUnique();
             user.HasIndex(entity => entity.UserName).IsUnique();
         });

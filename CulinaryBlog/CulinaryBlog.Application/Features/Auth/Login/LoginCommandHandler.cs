@@ -52,7 +52,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResponseDto
         var refreshToken = _jwtService.GenerateRefreshToken();
         using var sha256 = SHA256.Create();
         var hashedToken = Convert.ToHexString(sha256.ComputeHash(Encoding.UTF8.GetBytes(refreshToken))).ToLowerInvariant();
-        
+
         _context.RefreshTokens.Add(new RefreshToken
         {
             Id = Guid.NewGuid(), UserId = user.Id, TokenHash = hashedToken,

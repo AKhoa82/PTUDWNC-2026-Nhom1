@@ -1,7 +1,74 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap");
+
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap");
+
 @import "tailwindcss";
 
-:root { --ink: #211b17; --paper: #fffdf9; }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: "DM Sans", sans-serif; }
-button, input { font: inherit; }
+/* MÀU SẮC CỦA CULINARYBLOG */
+:root {
+  --brand-primary: #022C24;
+  --brand-secondary: #063C2F;
+  --brand-gold: #C6A15B;
+  --brand-gold-hover: #B8934E;
+
+  --background: #FBF8F1;
+  --background-secondary: #F5F0E6;
+
+  --text-primary: #1C2421;
+  --text-secondary: #8D958F;
+
+  --border: #E5DECE;
+
+  --danger: #B9674A;
+}
+
+/* RESET */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text-primary);
+  font-family: "DM Sans", sans-serif;
+}
+
+/* FONT TIÊU ĐỀ */
+.font-editorial {
+  font-family: "Playfair Display", Georgia, serif;
+}
+
+/* FORM */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* LIÊN KẾT */
+a {
+  transition: color 0.2s ease;
+}
+
+/* SCROLLBAR */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5F0E6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #B6AB96;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #C6A15B;
+}

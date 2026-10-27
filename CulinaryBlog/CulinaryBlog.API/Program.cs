@@ -1,10 +1,12 @@
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.API.Endpoints;
+using CulinaryBlog.API.Infrastructure;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Common.Behaviors;
 using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Infrastructure.Security;
@@ -26,6 +28,14 @@ using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Infrastructure;
 using CulinaryBlog.Infrastructure.Jobs;
 using Hangfire;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Text.Json;
+using Microsoft.AspNetCore.RateLimiting;
+using StackExchange.Redis;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -48,6 +58,11 @@ if (args.Contains("--storage-backfill") || args.Contains("--storage-inventory"))
     return;
 }
 
+builder.Host.UseSerilog((context, services, logger) => logger
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .WriteTo.Console(new RenderedCompactJsonFormatter()));
+
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
     throw new InvalidOperationException("Configure Jwt:Key (at least 32 UTF-8 bytes) using User Secrets or Jwt__Key.");
@@ -56,16 +71,14 @@ if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32
 if (OperatingSystem.IsWindows())
     builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>((_, _) => false);
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("Frontend", policy =>
-    {
-        policy
-            .WithOrigins("http://localhost:3000", "http://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
+builder.Services.AddFrontendCors(builder.Configuration);
+builder.Services.AddHttpClient();
+builder.Services.AddTrustedForwardedHeaders(builder.Configuration);
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:Redis.");
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddSingleton<IAuthRateLimitCounter, RedisAuthRateLimitCounter>();
 builder.Services.AddDataProtection();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -102,6 +115,7 @@ builder.Services.AddIdentityCore<User>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterCommand).Assembly);
 builder.Services.AddMediatR(cfg =>
 {
@@ -122,12 +136,35 @@ builder.Services.AddStackExchangeRedisOutputCache(options =>
 });
 builder.Services.AddOutputCache(options =>
 {
+    options.AddPolicy("RecipeList", builder =>
+        builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeListCachePolicy>());
     options.AddPolicy("RecipeDetail", builder => 
         builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeDetailCachePolicy>());
 });
 builder.Services.AddInfrastructureServices(builder.Configuration);
 
 builder.Services.AddProblemDetails();
+
+// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn SRS ---
+var rawMinioEndpoint = (builder.Configuration["MinIO:Endpoint"] ?? "localhost:9000").Trim();
+var minioUseSsl = builder.Configuration.GetValue<bool>("MinIO:UseSSL");
+if (!rawMinioEndpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+    !rawMinioEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+{
+    rawMinioEndpoint = $"{(minioUseSsl ? "https" : "http")}://{rawMinioEndpoint}";
+}
+var minioHealthUrl = rawMinioEndpoint.TrimEnd('/');
+if (!minioHealthUrl.EndsWith("/minio/health/live", StringComparison.OrdinalIgnoreCase))
+{
+    minioHealthUrl += "/minio/health/live";
+}
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>(name: "PostgreSQL", tags: new[] { "ready" })
+    .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" })
+    .AddUrlGroup(new Uri(minioHealthUrl), name: "MinIO");
+// -----------------------------------------------------------
+
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
 builder.Services.AddControllers();
@@ -182,11 +219,14 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.UseCors("Frontend");
+app.UseStaticFiles();
+app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 app.UseRateLimiter();
 app.UseRecipeImageRequestLimits();
 app.UseOutputCache();
@@ -202,7 +242,7 @@ if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
     app.MapHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = []
-    }).RequireAuthorization("AdminPolicy");
+    }).RequireAuthorization("AdminPolicy"); // Đã khôi phục kiểm tra quyền Admin
 }
 
 app.MapGet("/api/v1/categories", async (
@@ -239,14 +279,13 @@ app.MapGet("/api/v1/recipes", async (
     string? difficulty = null,
     int? maxCookTime = null,
     int? minServings = null,
-    string sort = "-createdAt") =>
+    string sort = "-createdAt",
+    Guid? authorId = null,
+    string? status = null) =>
 {
-
-        // Difficulty validation moved to GetRecipesQueryValidator; raw value handled in handler.
-
     string? currentUserId = null;
     bool isAdmin = false;
-    
+
     if (user?.Identity?.IsAuthenticated == true)
     {
         currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -263,17 +302,20 @@ app.MapGet("/api/v1/recipes", async (
         MinServings: minServings,
         Sort: sort,
         CurrentUserId: currentUserId,
-        IsAdmin: isAdmin
+        IsAdmin: isAdmin,
+        AuthorId: authorId,
+        StatusRaw: status
     );
 
     var result = await mediator.Send(query, cancellationToken);
     return Results.Ok(result);
 })
 .WithName("GetRecipesV1")
-.WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt. Giá trị rỗng hoặc không hỗ trợ dùng mặc định. Sắp xếp trước phân trang, dùng Id tăng dần khi trùng giá trị.")
+.WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt.")
 .WithSummary("Danh sách công thức")
 .Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.CacheOutput("RecipeList")
 .AllowAnonymous();
 
 app.MapGet("/api/v1/recipes/search", async (
@@ -327,7 +369,7 @@ app.MapPost("/api/v1/recipes", async (
     CancellationToken cancellationToken) =>
 {
     // Validation handled by CreateRecipeCommandValidator (FluentValidation)
-    
+
     string? authorId = null;
     if (user?.Identity?.IsAuthenticated == true)
     {
@@ -361,11 +403,11 @@ app.MapPut("/api/v1/recipes/{id:guid}", async (
 {
     string? currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (string.IsNullOrEmpty(currentUserId)) throw new UnauthorizedAccessException("Token không có user ID.");
-    
+
     bool isAdmin = user.IsInRole("Admin");
 
     var result = await mediator.Send(
-        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin), 
+        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin),
         cancellationToken);
 
     await cacheStore.InvalidateAsync(result.Slug, cancellationToken);
@@ -393,9 +435,36 @@ using (var scope = app.Services.CreateScope())
     {
         if (!await roleManager.RoleExistsAsync(roleName))
         {
-            var result = await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
-            if (!result.Succeeded && !await roleManager.RoleExistsAsync(roleName))
-                throw new InvalidOperationException($"Could not initialize role {roleName}.");
+            await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
+        }
+    }
+
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+    if (app.Environment.IsDevelopment() &&
+        builder.Configuration["DevAdmin:Password"] is { Length: > 0 } adminPassword)
+    {
+        const string adminEmail = "admin@culinaryblog.local";
+        var admin = await userManager.FindByEmailAsync(adminEmail);
+        if (admin is null)
+        {
+            admin = new User
+            {
+                UserName = "dev-admin",
+                Email = adminEmail,
+                EmailConfirmed = true,
+                FullName = "Quản trị viên phát triển"
+            };
+            var createResult = await userManager.CreateAsync(admin, adminPassword);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create development admin: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+
+            var roleResult = await userManager.AddToRoleAsync(admin, "Admin");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign development admin role: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+        else if (!await userManager.IsInRoleAsync(admin, "Admin"))
+        {
+            throw new InvalidOperationException($"{adminEmail} already exists without the Admin role. Use another account or resolve the existing account manually.");
         }
     }
 
@@ -410,8 +479,6 @@ using (var scope = app.Services.CreateScope())
     }
 
     const string sampleAuthorUserName = "sample-recipe-author";
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-
     if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
         var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
@@ -561,6 +628,68 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletion
     "reconcile-file-deletions", job => job.ExecuteAsync(CancellationToken.None), "*/5 * * * *");
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
     "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CulinaryBlog.Infrastructure.Jobs.GenerateSitemapJob>(
+    "generate-sitemap", job => job.ExecuteAsync(CancellationToken.None), "0 2 * * *");
+if (!File.Exists(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "sitemap.xml")))
+    BackgroundJob.Enqueue<GenerateSitemapJob>(job => job.ExecuteAsync(CancellationToken.None));
+
+// --- Bổ sung FR-OBS-001: 3 Health Check Endpoints ---
+var healthCheckOptions = new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            status = report.Status.ToString(),
+            totalDuration = report.TotalDuration.ToString(),
+            entries = report.Entries.ToDictionary(
+                e => e.Key,
+                e => new
+                {
+                    status = e.Value.Status.ToString(),
+                    description = e.Value.Description ?? "OK"
+                })
+        };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+};
+
+app.MapHealthChecks("/health", healthCheckOptions).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = healthCheckOptions.ResponseWriter
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = healthCheckOptions.ResponseWriter
+}).AllowAnonymous();
+// ---------------------------------------------------
+
+// --- Khai báo Robots.txt ---
+app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration config) =>
+{
+    // Tự động lấy URL công khai từ cấu hình hoặc từ chính Request Host hiện tại
+    var publicBaseUrl = (config["BackendBaseUrl"] 
+        ?? config["PublicBaseUrl"] 
+        ?? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}").TrimEnd('/');
+
+    var robotsTxt = $"User-agent: *\nAllow: /\nSitemap: {publicBaseUrl}/sitemap.xml";
+    return Results.Text(robotsTxt, "text/plain");
+})
+.WithName("GetRobotsTxt")
+.WithSummary("Khai báo Sitemap cho Bot tìm kiếm")
+.AllowAnonymous();
+// ---------------------------
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<ImageResizeReconciliationJob>(
+    "reconcile-image-resizes", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
+
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<WelcomeEmailReconciliationJob>(
+    "reconcile-welcome-emails", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
 
 app.MapControllers();
 

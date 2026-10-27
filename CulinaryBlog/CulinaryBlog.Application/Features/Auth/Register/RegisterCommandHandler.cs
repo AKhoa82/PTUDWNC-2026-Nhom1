@@ -1,3 +1,5 @@
+using CulinaryBlog.Application.Contracts.Infrastructure;
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
 using CulinaryBlog.Application.Contracts.Security;
@@ -15,15 +17,22 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthRespo
     private readonly IApplicationDbContext _context;
     private readonly UserManager<User> _userManager;
     private readonly IJwtService _jwtService;
+    private readonly IRegistrationTransactionFactory _transactions;
+    private readonly IWelcomeEmailQueue _emails;
+    private readonly ILogger<RegisterCommandHandler> _logger;
 
     public RegisterCommandHandler(
         IApplicationDbContext context,
         UserManager<User> userManager,
-        IJwtService jwtService)
+        IJwtService jwtService, IRegistrationTransactionFactory transactions,
+        IWelcomeEmailQueue emails, ILogger<RegisterCommandHandler> logger)
     {
         _context = context;
         _userManager = userManager;
         _jwtService = jwtService;
+        _transactions = transactions;
+        _emails = emails;
+        _logger = logger;
     }
 
     public async Task<AuthResponseDto> Handle(
@@ -55,6 +64,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthRespo
             CreatedAt = DateTime.UtcNow
         };
 
+        await using var transaction = await _transactions.BeginAsync(cancellationToken);
         var result = await _userManager.CreateAsync(user, request.Request.Password);
         if (!result.Succeeded)
         {
@@ -83,7 +93,6 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthRespo
         var roleResult = await _userManager.AddToRoleAsync(user, "Author");
         if (!roleResult.Succeeded)
         {
-            await _userManager.DeleteAsync(user);
             throw new InvalidOperationException(string.Join(" ", roleResult.Errors.Select(error => error.Description)));
         }
 
@@ -103,14 +112,23 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthRespo
             ExpiresAt = now.AddDays(7)
         });
 
+        var emailMessage = new WelcomeEmailOutbox
+        {
+            UserId = user.Id, Email = email, FullName = user.FullName
+        };
+        _context.WelcomeEmailOutboxes.Add(emailMessage);
+        // Generate the response before committing, so token-generation failures roll back too.
+        var accessToken = _jwtService.GenerateAccessToken(user, roles);
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            // Do not let a disconnected HTTP client cancel post-commit dispatch.
+            await _emails.EnqueueAsync(emailMessage.Id, CancellationToken.None);
         }
-        catch
+        catch (Exception)
         {
-            await _userManager.DeleteAsync(user);
-            throw;
+            _logger.LogWarning("Welcome email dispatch deferred for user {UserId}, outbox {OutboxId}", user.Id, emailMessage.Id);
         }
 
         return new AuthResponseDto(
@@ -118,7 +136,7 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthRespo
             user.UserName ?? string.Empty,
             user.FullName,
             user.Email ?? string.Empty,
-            _jwtService.GenerateAccessToken(user, roles),
+            accessToken,
             refreshToken,
             now.AddMinutes(15),
             now.AddDays(7)

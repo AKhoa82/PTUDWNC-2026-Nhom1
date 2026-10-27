@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 interface Category {
   id: string;
@@ -60,7 +61,7 @@ export default function CategoriesPage() {
             className="p-5 border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all bg-white"
           >
             <h2 className="text-xl font-semibold text-emerald-600 mb-1">
-              {item.name}
+              <Link href={`/categories/${item.slug}`} className="hover:underline">{item.name}</Link>
             </h2>
             <span className="inline-block bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-md font-mono mb-3">
               /{item.slug}

@@ -20,10 +20,10 @@ public class ArchiveRecipeCommandHandler : IRequestHandler<ArchiveRecipeCommand,
 
     public async Task<RecipeDto> Handle(ArchiveRecipeCommand request, CancellationToken cancellationToken)
     {
-            var recipe = await _context.Recipes
-                .Include(r => r.Category)
-                .FirstOrDefaultAsync(r => r.Id == request.Id, cancellationToken)
-                ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
+        var recipe = await _context.Recipes
+            .Include(r => r.Category)
+            .FirstOrDefaultAsync(r => r.Id == request.Id, cancellationToken)
+            ?? throw new NotFoundException($"Không tìm thấy công thức với ID: {request.Id}");
 
         if (!Guid.TryParse(request.CurrentUserId, out var parsedUserId))
             throw new UnauthorizedAccessException("Invalid User ID");
@@ -32,9 +32,19 @@ public class ArchiveRecipeCommandHandler : IRequestHandler<ArchiveRecipeCommand,
             throw new ForbiddenException("Bạn không có quyền lưu trữ công thức này.");
         }
 
-        recipe.Archive();
+        var statusAlreadyMatches = request.Unarchive
+            ? recipe.Status != RecipeStatus.Archived
+            : recipe.Status == RecipeStatus.Archived;
+        if (statusAlreadyMatches)
+        {
+            var unchanged = recipe.Adapt<RecipeDto>();
+            unchanged.RowVersion = recipe.RowVersion.ToString();
+            return unchanged;
+        }
 
-        _context.Recipes.Update(recipe);
+        if (request.Unarchive) recipe.Unarchive();
+        else recipe.Archive();
+
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
         

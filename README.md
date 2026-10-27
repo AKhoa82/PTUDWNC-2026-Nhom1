@@ -27,6 +27,10 @@ Nền tảng web hiện đại cho phép người dùng chia sẻ, khám phá v�
   - **Mapster** phục vụ ánh xạ DTO hiệu năng cao tại tầng Application
 - **Tài liệu API:** OpenAPI 3.x tích hợp giao diện tương tác **Scalar**
 
+### Cấu hình sitemap khi triển khai
+
+Đặt `FrontendBaseUrl` và `BackendBaseUrl` thành URL HTTP(S) công khai của frontend và API (có thể dùng biến môi trường `FrontendBaseUrl` và `BackendBaseUrl`). Môi trường Development dùng `http://localhost:3000` và `http://localhost:5018`; các giá trị localhost không được dùng cho sitemap production. Job Hangfire tạo `wwwroot/sitemap.xml` khi khởi động lần đầu và cập nhật hàng ngày lúc 02:00 UTC. File được tạo theo môi trường nên không đưa vào Git.
+
 ---
 
 ## 📁 Cấu trúc Thư mục Chi tiết (Clean Architecture)
@@ -157,3 +161,7 @@ Xem [hướng dẫn cấu hình, API và kiểm thử](docs/FR-RCP-008.md). MinI
 Trang `/recipes` hỗ trợ sắp xếp theo ngày tạo, tên và thời gian nấu theo hai chiều. Xem [quy ước API và hướng dẫn nghiệm thu](docs/FR-SRCH-003.md).
 
 © 2026 - Culinary Blog Team. All rights reserved.
+
+## Welcome email (FR-JOB-001)
+
+SMTP/MailKit, Hangfire and transactional outbox. See [configuration and acceptance guide](docs/FR-JOB-001.md). Development mail inbox: http://localhost:8025.

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using CulinaryBlog.Application.Categories.Commands.CreateCategory;
 using CulinaryBlog.Application.Features.Categories.Commands.UpdateCategory;
+using CulinaryBlog.Application.Features.Categories.Commands.DeleteCategory;
 
 namespace CulinaryBlog.Api.Controllers;
 
@@ -43,6 +44,21 @@ public class CategoriesController : ControllerBase
 
         // Trả về HTTP 200 OK với đối tượng CategoryDto
         return Ok(categoryDto);
+    }
+
+    /// <summary>
+    /// FR-CAT-005: Xóa danh mục
+    /// </summary>
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")] 
+    public async Task<IActionResult> DeleteCategory(Guid id)
+    {
+        var command = new DeleteCategoryCommand(id);
+        
+        await _mediator.Send(command);
+
+        // Trả về HTTP 204 No Content
+        return NoContent();
     }
 }
 
