@@ -4,12 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, LogOut, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { clearAuth } from "@/lib/auth-client";
-import { signIn, signOut, useSession } from "next-auth/react";
-import { saveAuthSession, type LoginResponse } from "../../../lib/auth-session";
+import { signIn, useSession } from "next-auth/react";
+import { logoutSession, saveAuthSession, type LoginResponse } from "../../../lib/auth-session";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
 const emailLoginEndpoint = `${apiUrl.replace(/\/$/, "")}/v1/auth/login`;
@@ -26,11 +25,16 @@ export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [serverError, setServerError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
+
+  useEffect(() => {
+    setIsLoggedIn(Boolean(localStorage.getItem("accessToken")));
+  }, []);
 
   useEffect(() => {
     if (session?.backendAuth) {
@@ -47,8 +51,16 @@ export default function LoginPage() {
   }, [session, router]);
 
   const onGoogleSignOut = async () => {
-    clearAuth();
-    await signOut({ redirectTo: "/auth/login" });
+    setIsSubmitting(true);
+    try {
+      await logoutSession();
+      setIsLoggedIn(false);
+      router.replace("/auth/login");
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "Không thể đăng xuất. Vui lòng thử lại.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -114,10 +126,26 @@ export default function LoginPage() {
         refreshToken: data.refreshToken,
         accessTokenExpiresAt: data.accessTokenExpiresAt,
       });
+      setIsLoggedIn(true);
       setSuccessMessage("Đăng nhập thành công.");
       router.push("/");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Không thể kết nối đến máy chủ.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onLogout = async () => {
+    setIsSubmitting(true);
+    setServerError("");
+    setSuccessMessage("");
+    try {
+      await logoutSession();
+      setIsLoggedIn(false);
+      setSuccessMessage("Đăng xuất thành công. Refresh token đã được thu hồi.");
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "Không thể đăng xuất. Vui lòng thử lại.");
     } finally {
       setIsSubmitting(false);
     }
@@ -148,6 +176,17 @@ export default function LoginPage() {
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Mật khẩu *</span><span className="relative block"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type={showPassword ? "text" : "password"} placeholder="••••••••" className={`${fieldClass(Boolean(errors.password))} pl-10 pr-11`} {...register("password")} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8d958f]" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>{errors.password && <span className="mt-1 block text-xs text-[#b9674a]">{errors.password.message}</span>}</label>
             <button type="submit" disabled={isSubmitting} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-lg bg-[#c6a15b] text-sm font-semibold uppercase tracking-wider text-[#022c24] transition hover:bg-[#063c2f] hover:text-[#fbf8f1] disabled:opacity-50">{isSubmitting ? "Đang đăng nhập..." : <>Đăng nhập <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
+          {isLoggedIn && (
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={isSubmitting}
+              className="mt-4 flex h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-[#063c2f]/30 text-sm font-semibold text-[#063c2f] transition hover:bg-[#063c2f]/10 disabled:opacity-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {isSubmitting ? "Đang đăng xuất..." : "Đăng xuất"}
+            </button>
+          )}
           <div className="my-6">
             <div className="mb-3 flex items-center gap-3">
               <div className="h-px flex-1 bg-[#e5dece]" />
