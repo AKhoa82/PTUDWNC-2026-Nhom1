@@ -32,7 +32,7 @@ npm run build
 npm run start
 ```
 
-## Kiểm thử E2E tạo công thức
+## Kiểm thử E2E công thức
 
 Dùng database thử nghiệm riêng. Chạy API ở `http://localhost:5018` với PostgreSQL,
 Redis và tài khoản Admin phát triển (`DevAdmin__Password`); chạy frontend ở
@@ -46,4 +46,4 @@ npm run test:e2e
 
 Có thể đổi địa chỉ bằng `E2E_API_URL` (mặc định
 `http://127.0.0.1:5018/api`) và `E2E_WEB_URL` (mặc định
-`http://localhost:3000`). Kiểm thử tạo bản nháp thật trong database thử nghiệm.
+`http://localhost:3000`). Kiểm thử tạo và cập nhật công thức thật trong database thử nghiệm.

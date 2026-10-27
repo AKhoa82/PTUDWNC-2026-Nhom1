@@ -675,6 +675,33 @@ public sealed class RecipeRequirementTests
         Assert.Equal(50, result.Nutrition.Fiber);
         Assert.Equal(60, result.Nutrition.Sodium);
     }
+
+    [Fact]
+    public async Task Update_rejects_stale_row_version_even_when_values_do_not_change()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var recipe = db.SeedRecipe(RecipeStatus.Draft);
+        var request = new UpdateRecipeRequest
+        {
+            Title = recipe.Title,
+            Description = recipe.Description,
+            CategoryId = recipe.CategoryId,
+            PrepTimeMinutes = recipe.PrepTimeMinutes,
+            CookingTimeMinutes = recipe.CookingTimeMinutes,
+            Servings = recipe.Servings,
+            Difficulty = recipe.Difficulty,
+            Instructions = recipe.Instructions,
+            RowVersion = (recipe.RowVersion + 1).ToString()
+        };
+
+        var handler = new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommandHandler(db);
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(
+            new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(
+                recipe.Id, request, recipe.AuthorId.ToString(), false), CancellationToken.None));
+
+        Assert.Empty(db.RecipeCacheInvalidations);
+    }
+
     [Fact]
     public void Draft_with_valid_steps_and_ingredients_can_be_published_and_sets_publishedat()
     {

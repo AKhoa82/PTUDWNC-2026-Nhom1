@@ -10,6 +10,32 @@ namespace CulinaryBlog.Application.Tests;
 public class RecipeValidationBoundaryTests
 {
     [Theory]
+    [InlineData("A    ", false)]
+    [InlineData("-----", false)]
+    [InlineData("Đậu hũ", true)]
+    public void Update_recipe_validates_trimmed_title_and_slug_characters(string title, bool expected)
+    {
+        var request = new UpdateRecipeRequest
+        {
+            Title = title,
+            Description = "Mô tả hợp lệ",
+            CategoryId = Guid.NewGuid(),
+            PrepTimeMinutes = 10,
+            CookingTimeMinutes = 0,
+            Servings = 2,
+            Difficulty = RecipeDifficulty.Easy,
+            RowVersion = "1"
+        };
+
+        var result = new UpdateRecipeCommandValidator().Validate(
+            new UpdateRecipeCommand(Guid.NewGuid(), request, Guid.NewGuid().ToString(), false));
+
+        Assert.Equal(expected, result.IsValid);
+        if (!expected)
+            Assert.Contains(result.Errors, error => error.PropertyName == "Request.Title");
+    }
+
+    [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
     [InlineData(4, true)]
