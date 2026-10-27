@@ -164,7 +164,10 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
   async function syncSteps(id: string, original: RecipeDetail, values: FormValues) {
     const currentIds = new Set(values.steps.map(item => item.serverId).filter(Boolean));
     for (const item of values.steps) {
-      const payload = { title: item.title || null, description: item.description.trim(), durationMinutes: item.durationMinutes ? Number(item.durationMinutes) : null, imageUrl: item.imageUrl.trim() || null };
+      const payload = { title: item.title.trim() || null, description: item.description.trim(), durationMinutes: item.durationMinutes ? Number(item.durationMinutes) : null, imageUrl: item.imageUrl.trim() || null };
+      const previous = item.serverId ? original.steps.find(step => step.id === item.serverId) : null;
+      if (previous && previous.title === payload.title && previous.description === payload.description &&
+        previous.durationMinutes === payload.durationMinutes && previous.imageUrl === payload.imageUrl) continue;
       await recipeRequest<void>(`/v1/recipes/${id}/steps/${item.serverId ?? ""}`, { method: item.serverId ? "PUT" : "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     }
     for (const old of original.steps) if (!currentIds.has(old.id)) await recipeRequest<void>(`/v1/recipes/${id}/steps/${old.id}`, { method: "DELETE", headers: authHeaders() });
