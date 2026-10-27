@@ -13,7 +13,9 @@ import {
   PlusCircle,
   LayoutDashboard,
   UserRound,
+  LogOut,
 } from "lucide-react";
+import { logoutSession } from "../../lib/auth-session";
 
 interface NavbarProps {
   isLoggedIn?: boolean;
@@ -39,6 +41,8 @@ export function Navbar({
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
   const canManage =
     isLoggedIn &&
@@ -58,6 +62,21 @@ export function Navbar({
 
     router.push(`/search?q=${encodeURIComponent(keyword)}`);
     setMobileMenuOpen(false);
+  };
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    setLogoutError("");
+    try {
+      await logoutSession();
+      setMobileMenuOpen(false);
+      router.replace("/auth/login");
+      router.refresh();
+    } catch (error) {
+      setLogoutError(error instanceof Error ? error.message : "Không thể đăng xuất. Vui lòng thử lại.");
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   return (
@@ -183,6 +202,10 @@ export function Navbar({
                   {userName}
                 </span>
               </Link>
+              <button type="button" onClick={handleLogout} disabled={loggingOut}
+                className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-[#F5F0E6] hover:bg-[#063C2F] disabled:opacity-50">
+                <LogOut className="h-4 w-4" /> {loggingOut ? "Đang đăng xuất..." : "Đăng xuất"}
+              </button>
             </>
           ) : (
             <>
@@ -295,6 +318,10 @@ export function Navbar({
                     </Link>
                   </>
                 )}
+                <button type="button" onClick={handleLogout} disabled={loggingOut}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-[#24604B] px-4 py-3 text-sm disabled:opacity-50">
+                  <LogOut className="h-4 w-4" /> {loggingOut ? "Đang đăng xuất..." : "Đăng xuất"}
+                </button>
               </>
             ) : (
               <>
@@ -318,6 +345,7 @@ export function Navbar({
           </div>
         </div>
       )}
+      {logoutError && <p role="alert" className="border-t border-[#B9674A]/50 bg-[#B9674A] px-4 py-2 text-center text-sm text-white">{logoutError}</p>}
     </header>
   );
 }

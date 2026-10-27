@@ -33,6 +33,13 @@ public sealed class LogoutCommandHandler : IRequestHandler<LogoutCommand>
             return;
 
         refreshToken.RevokedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Hai yêu cầu logout đồng thời vẫn có cùng kết quả idempotent.
+        }
     }
 }

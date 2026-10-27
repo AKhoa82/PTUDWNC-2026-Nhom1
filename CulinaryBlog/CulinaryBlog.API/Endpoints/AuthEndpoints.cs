@@ -13,6 +13,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -29,7 +32,9 @@ public static class AuthEndpoints
         group.MapPost("/login", Login).WithSummary("FR-AUTH-002: Đăng nhập");
         group.MapPost("/logout", Logout)
             .AllowAnonymous()
-            .WithSummary("FR-AUTH-005: Đăng xuất và thu hồi refresh token");
+            .WithSummary("FR-AUTH-005: Đăng xuất và thu hồi refresh token")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
         group.MapPost("/google", GoogleLogin)
             .WithSummary("FR-AUTH-003: Đăng nhập bằng Google")
             .AllowAnonymous()
@@ -104,12 +109,18 @@ public static class AuthEndpoints
     }
 
     private static async Task<IResult> Logout(
-        LogoutRequest? request,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] LogoutRequest? request,
+        HttpContext httpContext,
+        IWebHostEnvironment environment,
         ClaimsPrincipal user,
+        IOptionsMonitor<JwtBearerOptions> jwtOptions,
         IMediator mediator,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request?.RefreshToken))
+        var rawToken = environment.IsProduction()
+            ? httpContext.Request.Cookies[RefreshTokenCookieName]
+            : request?.RefreshToken;
+        if (string.IsNullOrWhiteSpace(rawToken))
             return Results.Unauthorized();
 
         Guid? userId = null;
@@ -122,10 +133,56 @@ public static class AuthEndpoints
 
             userId = parsedUserId;
         }
+        else if (httpContext.Request.Headers.Authorization is { Count: > 0 })
+        {
+            // JWT hết hạn được chấp nhận riêng cho logout khi refresh token còn được gửi kèm.
+            var authorization = httpContext.Request.Headers.Authorization.ToString();
+            if (!authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                return Results.Unauthorized();
+
+            try
+            {
+                var parameters = jwtOptions.Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.Clone();
+                parameters.ValidateLifetime = false;
+                var principal = new JwtSecurityTokenHandler().ValidateToken(
+                    authorization["Bearer ".Length..].Trim(), parameters, out var validatedToken);
+                if (validatedToken.ValidTo == DateTime.MinValue || validatedToken.ValidTo > DateTime.UtcNow)
+                    return Results.Unauthorized();
+
+                var userIdClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
+                if (!Guid.TryParse(userIdClaim, out var parsedUserId))
+                    return Results.Unauthorized();
+                userId = parsedUserId;
+            }
+            catch (SecurityTokenException)
+            {
+                return Results.Unauthorized();
+            }
+            catch (ArgumentException)
+            {
+                return Results.Unauthorized();
+            }
+        }
+        else
+        {
+            return Results.Unauthorized();
+        }
 
         await mediator.Send(
-            new LogoutCommand(userId, request.RefreshToken),
+            new LogoutCommand(userId, rawToken),
             cancellationToken);
+
+        if (environment.IsProduction())
+        {
+            httpContext.Response.Cookies.Delete(RefreshTokenCookieName, new CookieOptions
+            {
+                Path = "/api/v1/auth",
+                Secure = true,
+                HttpOnly = true,
+                SameSite = SameSiteMode.Strict
+            });
+        }
 
         return Results.NoContent();
     }

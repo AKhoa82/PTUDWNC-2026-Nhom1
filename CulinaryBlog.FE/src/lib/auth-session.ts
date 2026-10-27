@@ -1,9 +1,10 @@
-import { getSession } from "next-auth/react";
+import { getSession, signOut } from "next-auth/react";
 import { clearAuth, type AuthResponse } from "./auth-client";
 
 export const AUTH_CHANGED_EVENT = "culinaryblog:auth-changed";
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api").replace(/\/$/, "");
 let refreshPromise: Promise<boolean> | null = null;
+let logoutInProgress = false;
 
 export type UserRole = "admin" | "author" | "reader";
 
@@ -65,7 +66,7 @@ export function saveAuthSession(response: LoginResponse, provider: "email" | "go
 }
 
 export async function ensureFreshSession(force = false): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || logoutInProgress) return false;
   const accessToken = localStorage.getItem("accessToken");
   if (!accessToken) return false;
   const expiresAt = Date.parse(localStorage.getItem("accessTokenExpiresAt") ?? "");
@@ -73,6 +74,43 @@ export async function ensureFreshSession(force = false): Promise<boolean> {
 
   refreshPromise ??= refreshSession().finally(() => { refreshPromise = null; });
   return refreshPromise;
+}
+
+export async function logoutSession(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (refreshPromise) await refreshPromise.catch(() => false);
+  logoutInProgress = true;
+  try {
+    if (localStorage.getItem("authProvider") === "google") {
+      const revokeResponse = await fetch("/api/auth/revoke", { method: "POST", cache: "no-store" });
+      if (revokeResponse.status !== 204) throw new Error("Không thể thu hồi phiên đăng nhập. Vui lòng thử lại.");
+      await signOut({ redirect: false });
+      clearAuth();
+      return;
+    }
+
+    const accessToken = localStorage.getItem("accessToken");
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (!accessToken && !refreshToken) {
+      clearAuth();
+      return;
+    }
+
+    const response = await fetch(`${apiUrl}/v1/auth/logout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ refreshToken: refreshToken ?? "" }),
+      cache: "no-store",
+    });
+    if (response.status !== 204) throw new Error("Không thể thu hồi phiên đăng nhập. Vui lòng thử lại.");
+    clearAuth();
+  } finally {
+    logoutInProgress = false;
+  }
 }
 
 async function refreshSession(): Promise<boolean> {

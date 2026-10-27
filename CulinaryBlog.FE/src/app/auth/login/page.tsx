@@ -7,13 +7,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, LogOut, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { clearAuth } from "@/lib/auth-client";
-import { signIn, signOut, useSession } from "next-auth/react";
-import { saveAuthSession, type LoginResponse } from "../../../lib/auth-session";
+import { signIn, useSession } from "next-auth/react";
+import { logoutSession, saveAuthSession, type LoginResponse } from "../../../lib/auth-session";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
 const emailLoginEndpoint = `${apiUrl.replace(/\/$/, "")}/v1/auth/login`;
-const logoutEndpoint = `${apiUrl.replace(/\/$/, "")}/v1/auth/logout`;
 
 const loginSchema = z.object({
   email: z.string().trim().email("Email không hợp lệ."),
@@ -35,7 +33,7 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    setIsLoggedIn(Boolean(localStorage.getItem("accessToken") && localStorage.getItem("refreshToken")));
+    setIsLoggedIn(Boolean(localStorage.getItem("accessToken")));
   }, []);
 
   useEffect(() => {
@@ -53,9 +51,16 @@ export default function LoginPage() {
   }, [session, router]);
 
   const onGoogleSignOut = async () => {
-    clearAuth();
-    setIsLoggedIn(false);
-    await signOut({ redirectTo: "/auth/login" });
+    setIsSubmitting(true);
+    try {
+      await logoutSession();
+      setIsLoggedIn(false);
+      router.replace("/auth/login");
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "Không thể đăng xuất. Vui lòng thử lại.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -135,42 +140,13 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setServerError("");
     setSuccessMessage("");
-
-    const accessToken = localStorage.getItem("accessToken");
-    const refreshToken = localStorage.getItem("refreshToken");
-    let serverRevoked = false;
-
     try {
-      if (refreshToken) {
-        const response = await fetch(logoutEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-          body: JSON.stringify({ refreshToken }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Máy chủ không thể thu hồi refresh token.");
-        }
-        serverRevoked = true;
-      }
-
-      setSuccessMessage(
-        serverRevoked
-          ? "Đăng xuất thành công. Refresh token đã được thu hồi."
-          : "Đã xóa phiên đăng nhập trên thiết bị này."
-      );
-    } catch (error) {
-      setServerError(
-        error instanceof Error
-          ? `${error.message} Phiên đăng nhập đã được xóa khỏi thiết bị này.`
-          : "Không thể thu hồi refresh token. Phiên đăng nhập đã được xóa khỏi thiết bị này."
-      );
-    } finally {
-      clearAuth();
+      await logoutSession();
       setIsLoggedIn(false);
+      setSuccessMessage("Đăng xuất thành công. Refresh token đã được thu hồi.");
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "Không thể đăng xuất. Vui lòng thử lại.");
+    } finally {
       setIsSubmitting(false);
     }
   };
