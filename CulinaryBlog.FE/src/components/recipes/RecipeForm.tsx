@@ -154,6 +154,9 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
     const currentIds = new Set(values.ingredients.map(item => item.serverId).filter(Boolean));
     for (const [index, item] of values.ingredients.entries()) {
       const payload = { name: item.name.trim(), quantity: item.quantity ? Number(item.quantity) : null, unit: item.unit || null, notes: item.notes || null, sortOrder: index };
+      const previous = item.serverId ? original.ingredients.find(ingredient => ingredient.id === item.serverId) : null;
+      if (previous && previous.name === payload.name && previous.quantity === payload.quantity &&
+        previous.unit === payload.unit && previous.notes === payload.notes && previous.sortOrder === payload.sortOrder) continue;
       await recipeRequest<void>(`/v1/recipes/${id}/ingredients${item.serverId ? `/${item.serverId}` : ""}`, { method: item.serverId ? "PUT" : "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     }
     for (const old of original.ingredients) if (!currentIds.has(old.id)) await recipeRequest<void>(`/v1/recipes/${id}/ingredients/${old.id}`, { method: "DELETE", headers: authHeaders() });
