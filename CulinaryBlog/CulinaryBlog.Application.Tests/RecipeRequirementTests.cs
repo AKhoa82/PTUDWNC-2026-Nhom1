@@ -438,10 +438,54 @@ public sealed class RecipeRequirementTests
 
     private static CreateRecipeRequest ValidCreateRequest() => new()
     {
-        Title = "Phở bò Hà Nội", CategoryId = Guid.NewGuid(),
+        Title = "Phở bò Hà Nội", Description = "Món phở bò truyền thống", CategoryId = Guid.NewGuid(),
         PrepTimeMinutes = 10, CookingTimeMinutes = 0, Servings = 2,
         Instructions = "Nấu nước dùng"
     };
+    [Theory]
+    [InlineData("A    ")]
+    [InlineData("-----")]
+    [InlineData("🍜🍜🍜")]
+    public void Create_rejects_titles_without_a_valid_slug_or_five_meaningful_characters(string title)
+    {
+        var request = ValidCreateRequest();
+        request.Title = title;
+
+        var result = new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.Contains(result.Errors, error => error.PropertyName == "Request.Title");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_requires_description(string? description)
+    {
+        var request = ValidCreateRequest();
+        request.Description = description!;
+
+        var result = new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.Contains(result.Errors, error => error.PropertyName == "Request.Description");
+    }
+
+    [Theory]
+    [InlineData(2000, true)]
+    [InlineData(2001, false)]
+    public void Create_limits_description_to_2000_characters(int length, bool expected)
+    {
+        var request = ValidCreateRequest();
+        request.Description = new string('a', length);
+
+        var result = new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.Equal(expected, result.IsValid);
+    }
+
     [Fact]
     public async Task Create_returns_RecipeDto()
     {

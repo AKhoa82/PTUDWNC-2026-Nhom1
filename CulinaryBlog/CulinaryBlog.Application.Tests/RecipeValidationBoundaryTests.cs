@@ -72,6 +72,7 @@ public class RecipeValidationBoundaryTests
         var request = new CreateRecipeRequest
         {
             Title = "Phở bò Hà Nội",
+            Description = "Món phở bò truyền thống",
             CategoryId = Guid.NewGuid(),
             PrepTimeMinutes = 10,
             CookingTimeMinutes = 0,

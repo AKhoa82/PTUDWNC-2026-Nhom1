@@ -9,7 +9,9 @@ public class CreateRecipeRequest
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
-    public string? Description { get; set; }
+    [Required(ErrorMessage = "Mô tả không được để trống")]
+    [MaxLength(2000)]
+    public string Description { get; set; } = string.Empty;
 
     [MaxLength(500)]
     public string? ImageUrl { get; set; }

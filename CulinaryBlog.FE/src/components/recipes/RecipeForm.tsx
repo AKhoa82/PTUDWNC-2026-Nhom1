@@ -26,9 +26,10 @@ const stepSchema = z.object({
   imageUrl: z.string().refine(value => !value || /^https?:\/\//i.test(value) || value.startsWith("/"), "Nhập URL ảnh hợp lệ."),
 });
 const schema = z.object({
-  title: z.string().trim().min(5, "Tiêu đề phải có ít nhất 5 ký tự.").max(200),
+  title: z.string().trim().min(5, "Tiêu đề phải có ít nhất 5 ký tự.").max(200)
+    .refine(value => /[a-z0-9]/i.test(value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d")), "Tiêu đề phải chứa ký tự có thể tạo đường dẫn công thức."),
   categoryId: z.guid("Chọn danh mục món ăn."),
-  description: z.string(),
+  description: z.string().trim().min(1, "Nhập mô tả công thức.").max(2000, "Mô tả không được vượt quá 2000 ký tự."),
   imageUrl: z.string().max(500, "Đường dẫn ảnh quá dài.").refine(value => !value || /^https?:\/\//i.test(value) || value.startsWith("/"), "Nhập URL ảnh hợp lệ."),
   difficulty: z.enum(["1", "2", "3", "4"]),
   prepTimeMinutes: z.number().int().min(1, "Ít nhất 1 phút.").max(1000),
@@ -238,7 +239,7 @@ export function RecipeForm({ recipeId, recipeSlug, initialNotice }: { recipeId?:
         <label className="md:col-span-2"><span className={labelClass}>Tiêu đề công thức *</span><input {...form.register("title")} placeholder="Ví dụ: Bún bò Huế" className={inputClass} /><ErrorText text={form.formState.errors.title?.message} /></label>
         <label><span className={labelClass}>Danh mục món ăn *</span><select {...form.register("categoryId")} className={inputClass}><option value="">Chọn danh mục</option>{categoriesQuery.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select><ErrorText text={form.formState.errors.categoryId?.message} />{categoriesQuery.isError && <ErrorText text="Không thể tải danh mục. Kiểm tra backend." />}</label>
         <label><span className={labelClass}>Độ khó *</span><select {...form.register("difficulty")} className={inputClass}><option value="1">Dễ</option><option value="2">Trung bình</option><option value="3">Khó</option><option value="4">Chuyên gia</option></select></label>
-        <label className="md:col-span-2"><span className={labelClass}>Mô tả món ăn</span><textarea {...form.register("description")} rows={3} placeholder="Giới thiệu hương vị và nguồn gốc món ăn..." className={inputClass} /></label>
+        <label className="md:col-span-2"><span className={labelClass}>Mô tả món ăn *</span><textarea {...form.register("description")} rows={3} maxLength={2000} placeholder="Giới thiệu hương vị và nguồn gốc món ăn..." className={inputClass} /><ErrorText text={form.formState.errors.description?.message} /></label>
         <div className="md:col-span-2"><label><span className={labelClass}>Ảnh bìa công thức (URL)</span><span className="relative block"><ImageIcon className="absolute left-3 top-3 h-4 w-4 text-[#A8894D]" /><input {...form.register("imageUrl")} readOnly={isEdit} placeholder="https://..." className={`${inputClass} pl-10 ${isEdit ? "cursor-not-allowed opacity-70" : ""}`} /></span><ErrorText text={form.formState.errors.imageUrl?.message} /></label><label className="mt-3 block"><span className={labelClass}>{isEdit ? "Thay ảnh bìa" : "Hoặc tải ảnh bìa lên"}</span><input type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={event => { const file = event.target.files?.[0] ?? null; if (file && file.size > 5 * 1024 * 1024) { setSaveError("Ảnh bìa không được vượt quá 5 MB."); event.target.value = ""; setCoverFile(null); } else { setSaveError(""); setCoverFile(file); } }} className="block w-full rounded-lg border border-[#E5DECE] bg-[#F5F0E6] p-2 text-xs" /><span className="mt-1 block text-xs text-[#66726B]">JPG, PNG, WebP hoặc AVIF; tối đa 5 MB.</span></label>{imageUrl && <div className="mt-3 h-44 overflow-hidden rounded-xl border border-[#E5DECE] bg-[#F5F0E6]"><img src={recipeImageUrl(imageUrl) ?? ""} alt="Xem trước ảnh bìa" className="h-full w-full object-cover" /></div>}</div>
       </div></section>
       <section hidden={!isEdit && activeSection !== 2} className={panelClass}><h2 className="border-b border-[#E5DECE] pb-3 font-editorial text-lg font-bold">2. Định lượng &amp; thời gian</h2><div className="grid gap-4 sm:grid-cols-3">

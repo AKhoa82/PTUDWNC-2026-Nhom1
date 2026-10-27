@@ -5,9 +5,6 @@ using Mapster;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 
@@ -44,7 +41,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
             Id = Guid.NewGuid(),
             Title = request.Request.Title.Trim(),
             Slug = slug,
-            Description = request.Request.Description,
+            Description = request.Request.Description.Trim(),
             ImageUrl = request.Request.ImageUrl,
             PrepTimeMinutes = request.Request.PrepTimeMinutes,
             CookingTimeMinutes = request.Request.CookingTimeMinutes,
@@ -119,27 +116,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
 
     private async Task<string> GenerateUniqueSlugAsync(string title, CancellationToken cancellationToken) 
     {
-        var normalizedString = title.Normalize(NormalizationForm.FormD);
-        var stringBuilder = new StringBuilder();
-        foreach (var c in normalizedString)
-        {
-            if (c is 'đ' or 'Đ')
-            {
-                stringBuilder.Append('d');
-                continue;
-            }
-
-            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != UnicodeCategory.NonSpacingMark)
-            {
-                stringBuilder.Append(c);
-            }
-        }
-        var slugWithoutAccents = stringBuilder.ToString().Normalize(NormalizationForm.FormC);
-
-        var baseSlug = slugWithoutAccents.ToLowerInvariant().Trim();
-        baseSlug = Regex.Replace(baseSlug, @"[^a-z0-9\s-]", "");
-        baseSlug = Regex.Replace(baseSlug, @"\s+", "-").Trim('-');
+        var baseSlug = RecipeSlugGenerator.GenerateBaseSlug(title);
         
         var slug = baseSlug;
         var counter = 1;
