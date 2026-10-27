@@ -19,6 +19,7 @@ public class RecipeValidationBoundaryTests
         var request = new UpdateRecipeRequest
         {
             Title = "Phở bò Hà Nội",
+            Description = "Món phở bò truyền thống",
             CategoryId = Guid.NewGuid(),
             PrepTimeMinutes = 10,
             CookingTimeMinutes = 0,
@@ -34,6 +35,32 @@ public class RecipeValidationBoundaryTests
         Assert.Equal(expected, result.IsValid);
         if (!expected)
             Assert.Contains(result.Errors, error => error.PropertyName == "Request.Difficulty");
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("Mô tả mới", true)]
+    [InlineData("   ", false)]
+    public void Update_recipe_preserves_description_when_omitted_and_rejects_blank(string? description, bool expected)
+    {
+        var request = new UpdateRecipeRequest
+        {
+            Title = "Phở bò Hà Nội",
+            Description = description,
+            CategoryId = Guid.NewGuid(),
+            PrepTimeMinutes = 10,
+            CookingTimeMinutes = 0,
+            Servings = 2,
+            Difficulty = RecipeDifficulty.Easy,
+            RowVersion = "1"
+        };
+
+        var result = new UpdateRecipeCommandValidator().Validate(
+            new UpdateRecipeCommand(Guid.NewGuid(), request, Guid.NewGuid().ToString(), false));
+
+        Assert.Equal(expected, result.IsValid);
+        if (!expected)
+            Assert.Contains(result.Errors, error => error.PropertyName == "Request.Description");
     }
 
     [Fact]

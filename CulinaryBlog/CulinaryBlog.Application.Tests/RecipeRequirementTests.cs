@@ -639,7 +639,7 @@ public sealed class RecipeRequirementTests
         var cat1 = new Category { Id = Guid.NewGuid(), Name = "C1", Slug = "c1" };
         var cat2 = new Category { Id = Guid.NewGuid(), Name = "C2", Slug = "c2" };
         db.Categories.AddRange(cat1, cat2);
-        var recipe = new Recipe { Id = Guid.NewGuid(), Title = "A", Slug = "a", Difficulty = RecipeDifficulty.Easy, CategoryId = cat1.Id, AuthorId = authorId, Status = RecipeStatus.Draft };
+        var recipe = new Recipe { Id = Guid.NewGuid(), Title = "A", Slug = "a", Description = "Mô tả ban đầu", Difficulty = RecipeDifficulty.Easy, CategoryId = cat1.Id, AuthorId = authorId, Status = RecipeStatus.Draft };
         db.Recipes.Add(recipe);
         await db.SaveChangesAsync();
 
@@ -649,6 +649,7 @@ public sealed class RecipeRequirementTests
 
         Assert.IsType<RecipeDto>(result);
         Assert.Equal(cat2.Name, result.CategoryName);
+        Assert.Equal("Mô tả ban đầu", result.Description);
     }
 
     [Fact]

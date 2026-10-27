@@ -11,6 +11,12 @@ public class UpdateRecipeCommandValidator : AbstractValidator<UpdateRecipeComman
             .MinimumLength(5).WithMessage("Tiêu đề phải từ 5 ký tự trở lên.")
             .MaximumLength(200).WithMessage("Tiêu đề không được vượt quá 200 ký tự.");
 
+        RuleFor(x => x.Request.Description)
+            .Must(description => description is null || !string.IsNullOrWhiteSpace(description))
+            .WithMessage("Mô tả không được để trống.")
+            .Must(description => description is null || description.Trim().Length <= 2000)
+            .WithMessage("Mô tả không được vượt quá 2000 ký tự.");
+
         RuleFor(x => x.Request.CategoryId)
             .NotEmpty().WithMessage("Danh mục không được để trống.");
 
