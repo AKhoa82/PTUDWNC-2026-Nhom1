@@ -28,8 +28,14 @@ using CulinaryBlog.Application.Common.Models;
 using CulinaryBlog.Infrastructure;
 using CulinaryBlog.Infrastructure.Jobs;
 using Hangfire;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Text.Json;
 using Microsoft.AspNetCore.RateLimiting;
 using StackExchange.Redis;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -51,6 +57,11 @@ if (args.Contains("--storage-backfill") || args.Contains("--storage-inventory"))
     else await maintenance.InventoryAsync(Console.Out, CancellationToken.None);
     return;
 }
+
+builder.Host.UseSerilog((context, services, logger) => logger
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .WriteTo.Console(new RenderedCompactJsonFormatter()));
 
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
@@ -133,6 +144,27 @@ builder.Services.AddOutputCache(options =>
 builder.Services.AddInfrastructureServices(builder.Configuration);
 
 builder.Services.AddProblemDetails();
+
+// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn SRS ---
+var rawMinioEndpoint = (builder.Configuration["MinIO:Endpoint"] ?? "localhost:9000").Trim();
+var minioUseSsl = builder.Configuration.GetValue<bool>("MinIO:UseSSL");
+if (!rawMinioEndpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+    !rawMinioEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+{
+    rawMinioEndpoint = $"{(minioUseSsl ? "https" : "http")}://{rawMinioEndpoint}";
+}
+var minioHealthUrl = rawMinioEndpoint.TrimEnd('/');
+if (!minioHealthUrl.EndsWith("/minio/health/live", StringComparison.OrdinalIgnoreCase))
+{
+    minioHealthUrl += "/minio/health/live";
+}
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>(name: "PostgreSQL", tags: new[] { "ready" })
+    .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" })
+    .AddUrlGroup(new Uri(minioHealthUrl), name: "MinIO");
+// -----------------------------------------------------------
+
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
 builder.Services.AddControllers();
@@ -190,6 +222,7 @@ if (app.Environment.IsDevelopment())
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
@@ -209,7 +242,7 @@ if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
     app.MapHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = []
-    }).RequireAuthorization("AdminPolicy");
+    }).RequireAuthorization("AdminPolicy"); // Đã khôi phục kiểm tra quyền Admin
 }
 
 app.MapGet("/api/v1/categories", async (
@@ -250,9 +283,6 @@ app.MapGet("/api/v1/recipes", async (
     Guid? authorId = null,
     string? status = null) =>
 {
-
-        // Difficulty validation moved to GetRecipesQueryValidator; raw value handled in handler.
-
     string? currentUserId = null;
     bool isAdmin = false;
 
@@ -281,7 +311,7 @@ app.MapGet("/api/v1/recipes", async (
     return Results.Ok(result);
 })
 .WithName("GetRecipesV1")
-.WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt. Giá trị rỗng hoặc không hỗ trợ dùng mặc định. Sắp xếp trước phân trang, dùng Id tăng dần khi trùng giá trị.")
+.WithDescription("FR-SRCH-003: sort=createdAt|title|cookTime|publishedAt; thêm tiền tố '-' để giảm dần. Mặc định -createdAt.")
 .WithSummary("Danh sách công thức")
 .Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
@@ -339,7 +369,7 @@ app.MapPost("/api/v1/recipes", async (
     CancellationToken cancellationToken) =>
 {
     // Validation handled by CreateRecipeCommandValidator (FluentValidation)
-    
+
     string? authorId = null;
     if (user?.Identity?.IsAuthenticated == true)
     {
@@ -405,9 +435,7 @@ using (var scope = app.Services.CreateScope())
     {
         if (!await roleManager.RoleExistsAsync(roleName))
         {
-            var result = await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
-            if (!result.Succeeded && !await roleManager.RoleExistsAsync(roleName))
-                throw new InvalidOperationException($"Could not initialize role {roleName}.");
+            await roleManager.CreateAsync(new IdentityRole<Guid>(roleName));
         }
     }
 
@@ -600,6 +628,63 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<FileDeletion
     "reconcile-file-deletions", job => job.ExecuteAsync(CancellationToken.None), "*/5 * * * *");
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageCacheInvalidator>(
     "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CulinaryBlog.Infrastructure.Jobs.GenerateSitemapJob>(
+    "generate-sitemap", job => job.ExecuteAsync(CancellationToken.None), "0 2 * * *");
+if (!File.Exists(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "sitemap.xml")))
+    BackgroundJob.Enqueue<GenerateSitemapJob>(job => job.ExecuteAsync(CancellationToken.None));
+
+// --- Bổ sung FR-OBS-001: 3 Health Check Endpoints ---
+var healthCheckOptions = new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            status = report.Status.ToString(),
+            totalDuration = report.TotalDuration.ToString(),
+            entries = report.Entries.ToDictionary(
+                e => e.Key,
+                e => new
+                {
+                    status = e.Value.Status.ToString(),
+                    description = e.Value.Description ?? "OK"
+                })
+        };
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+};
+
+app.MapHealthChecks("/health", healthCheckOptions).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = healthCheckOptions.ResponseWriter
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = healthCheckOptions.ResponseWriter
+}).AllowAnonymous();
+// ---------------------------------------------------
+
+// --- Khai báo Robots.txt ---
+app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration config) =>
+{
+    // Tự động lấy URL công khai từ cấu hình hoặc từ chính Request Host hiện tại
+    var publicBaseUrl = (config["BackendBaseUrl"] 
+        ?? config["PublicBaseUrl"] 
+        ?? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}").TrimEnd('/');
+
+    var robotsTxt = $"User-agent: *\nAllow: /\nSitemap: {publicBaseUrl}/sitemap.xml";
+    return Results.Text(robotsTxt, "text/plain");
+})
+.WithName("GetRobotsTxt")
+.WithSummary("Khai báo Sitemap cho Bot tìm kiếm")
+.AllowAnonymous();
+// ---------------------------
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<ImageResizeReconciliationJob>(
     "reconcile-image-resizes", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
 

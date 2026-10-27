@@ -33,3 +33,6 @@
 ehthumbs.db
 Thumbs.db
 Desktop.ini
+
+# Sitemap được job tạo theo URL công khai của từng môi trường.
+CulinaryBlog/CulinaryBlog.API/wwwroot/sitemap.xml
