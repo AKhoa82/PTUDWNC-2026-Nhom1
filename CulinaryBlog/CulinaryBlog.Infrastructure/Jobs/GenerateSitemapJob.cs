@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 
 namespace CulinaryBlog.Infrastructure.Jobs;
 
@@ -18,27 +19,36 @@ public class GenerateSitemapJob
     private readonly string _frontendBaseUrl;
     private readonly string _sitemapPublicBaseUrl;
     private readonly IWebHostEnvironment _env;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     public GenerateSitemapJob(
         IApplicationDbContext context, 
         ILogger<GenerateSitemapJob> logger,
         IConfiguration configuration,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IHttpClientFactory httpClientFactory)
     {
         _context = context;
         _logger = logger;
         _env = env;
+        _httpClientFactory = httpClientFactory;
 
-        // Thống nhất đọc đúng khóa FrontendBaseUrl từ appsettings.json
-        _frontendBaseUrl = (configuration["FrontendBaseUrl"] 
-            ?? configuration["FrontendUrl"] 
-            ?? "http://localhost:3000").TrimEnd('/');
+        _frontendBaseUrl = GetPublicBaseUrl(configuration, "FrontendBaseUrl", env);
+        _sitemapPublicBaseUrl = GetPublicBaseUrl(configuration, "BackendBaseUrl", env);
+    }
 
-        // Đọc URL công khai nơi phục vụ sitemap.xml (ưu tiên cấu hình BackendBaseUrl / PublicBaseUrl)
-        _sitemapPublicBaseUrl = (configuration["BackendBaseUrl"] 
-            ?? configuration["PublicBaseUrl"] 
-            ?? configuration["ASPNETCORE_URLS"]?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() 
-            ?? _frontendBaseUrl).TrimEnd('/');
+    private static string GetPublicBaseUrl(IConfiguration configuration, string key, IWebHostEnvironment env)
+    {
+        var value = configuration[key]?.Trim();
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https") ||
+            (!env.IsDevelopment() && uri.IsLoopback))
+        {
+            throw new InvalidOperationException($"Configure {key} as a public HTTP(S) URL for sitemap generation.");
+        }
+
+        return uri.ToString().TrimEnd('/');
     }
 
     [DisableConcurrentExecution(timeoutInSeconds: 300)]
@@ -48,7 +58,7 @@ public class GenerateSitemapJob
 
         var categories = await _context.Categories
             .AsNoTracking()
-            .Select(c => c.Slug)
+            .Select(c => new { c.Slug, c.UpdatedAt, c.CreatedAt })
             .ToListAsync(cancellationToken);
 
         var recipes = await _context.Recipes
@@ -57,15 +67,16 @@ public class GenerateSitemapJob
             .Select(r => new { r.Slug, r.UpdatedAt, r.PublishedAt })
             .ToListAsync(cancellationToken);
 
-        // Chỉ đưa trang chủ vào danh sách tĩnh (bỏ /about và /contact do frontend chưa có)
         var urls = new List<(string Loc, DateTime LastMod, string ChangeFreq, string Priority)>
         {
-            ($"{_frontendBaseUrl}/", DateTime.UtcNow, "daily", "1.0")
+            ($"{_frontendBaseUrl}/", DateTime.UtcNow, "daily", "1.0"),
+            ($"{_frontendBaseUrl}/categories", DateTime.UtcNow, "weekly", "0.8"),
+            ($"{_frontendBaseUrl}/recipes", DateTime.UtcNow, "daily", "0.8")
         };
 
-        foreach (var slug in categories)
+        foreach (var category in categories)
         {
-            urls.Add(($"{_frontendBaseUrl}/categories/{slug}", DateTime.UtcNow, "weekly", "0.8"));
+            urls.Add(($"{_frontendBaseUrl}/categories/{category.Slug}", category.UpdatedAt ?? category.CreatedAt, "weekly", "0.8"));
         }
 
         foreach (var recipe in recipes)
@@ -97,13 +108,25 @@ public class GenerateSitemapJob
             xmlWriter.WriteEndDocument();
         }
 
-        _logger.LogInformation($"Tạo Sitemap thành công. Tổng cộng có {urls.Count} URLs được lưu tại wwwroot/sitemap.xml.");
+        _logger.LogInformation("Tạo sitemap thành công: {UrlCount} URL tại {SitemapPath}", urls.Count, sitemapPath);
 
-        // Ping Google bằng URL công khai của sitemap
-        await PingGoogleAsync($"{_sitemapPublicBaseUrl}/sitemap.xml", cancellationToken);
+        // Google đã ngừng ping endpoint; lỗi gửi thông báo không làm hỏng sitemap đã tạo.
+        var sitemapUrl = $"{_sitemapPublicBaseUrl}/sitemap.xml";
+        try
+        {
+            await PingGoogleAsync(sitemapUrl, cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Không thể ping Google cho {SitemapUrl}; sitemap vẫn được công bố qua robots.txt", sitemapUrl);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Ping Google hết thời gian chờ cho {SitemapUrl}; sitemap vẫn được công bố qua robots.txt", sitemapUrl);
+        }
     }
 
-    private void WriteUrl(XmlWriter writer, string loc, DateTime lastmod, string changefreq, string priority)
+    private static void WriteUrl(XmlWriter writer, string loc, DateTime lastmod, string changefreq, string priority)
     {
         writer.WriteStartElement("url");
         writer.WriteElementString("loc", loc);
@@ -115,19 +138,22 @@ public class GenerateSitemapJob
 
     private async Task PingGoogleAsync(string sitemapUrl, CancellationToken cancellationToken)
     {
-        using var client = new HttpClient();
+        var client = _httpClientFactory.CreateClient();
         var pingUrl = $"https://www.google.com/ping?sitemap={Uri.EscapeDataString(sitemapUrl)}";
-        var response = await client.GetAsync(pingUrl, cancellationToken);
+        using var response = await client.GetAsync(pingUrl, cancellationToken);
         
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Đã Ping sitemap thành công tới Google Search Console: {SitemapUrl}", sitemapUrl);
         }
+        else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Google đã ngừng ping endpoint; robots.txt vẫn công bố URL sitemap.
+            _logger.LogWarning("Google sitemap ping đã ngừng hỗ trợ (HTTP 404); sitemap vẫn được công bố tại {SitemapUrl}", sitemapUrl);
+        }
         else
         {
-            var errorMsg = $"Ping Google thất bại ({sitemapUrl}). Status Code: {response.StatusCode}";
-            _logger.LogWarning(errorMsg);
-            throw new HttpRequestException(errorMsg);
+            throw new HttpRequestException($"Ping Google thất bại: HTTP {(int)response.StatusCode}");
         }
     }
 }

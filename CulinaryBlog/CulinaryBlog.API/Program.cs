@@ -34,6 +34,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Text.Json;
 using Microsoft.AspNetCore.RateLimiting;
 using StackExchange.Redis;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -55,6 +57,11 @@ if (args.Contains("--storage-backfill") || args.Contains("--storage-inventory"))
     else await maintenance.InventoryAsync(Console.Out, CancellationToken.None);
     return;
 }
+
+builder.Host.UseSerilog((context, services, logger) => logger
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .WriteTo.Console(new RenderedCompactJsonFormatter()));
 
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
@@ -623,6 +630,8 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<RecipeImageC
     "reconcile-recipe-cache", job => job.ProcessAsync(CancellationToken.None), "* * * * *");
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CulinaryBlog.Infrastructure.Jobs.GenerateSitemapJob>(
     "generate-sitemap", job => job.ExecuteAsync(CancellationToken.None), "0 2 * * *");
+if (!File.Exists(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "sitemap.xml")))
+    BackgroundJob.Enqueue<GenerateSitemapJob>(job => job.ExecuteAsync(CancellationToken.None));
 
 // --- Bổ sung FR-OBS-001: 3 Health Check Endpoints ---
 var healthCheckOptions = new HealthCheckOptions
