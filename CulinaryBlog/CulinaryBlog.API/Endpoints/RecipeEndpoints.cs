@@ -32,7 +32,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new PublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })
@@ -57,12 +57,29 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new UnpublishRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })
         .WithName("UnpublishRecipe")
         .WithSummary("Hủy xuất bản công thức nấu ăn")
+        .RequireAuthorization("AuthorPolicy")
+        .Produces<RecipeDto>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPatch("/{id:guid}/unarchive", async (
+            Guid id, ISender sender, ClaimsPrincipal user,
+            RecipeImageCacheInvalidator cacheStore, CancellationToken ct) =>
+        {
+            var currentUserId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, user.IsInRole("Admin"), true), ct);
+            await cacheStore.InvalidateAsync(result.Slug, ct);
+            return Results.Ok(result);
+        })
+        .WithName("UnarchiveRecipe")
+        .WithSummary("Khôi phục công thức đã lưu trữ về bản nháp")
         .RequireAuthorization("AuthorPolicy")
         .Produces<RecipeDto>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -81,7 +98,7 @@ public static class RecipeEndpoints
                 var isAdmin = user.IsInRole("Admin");
                 var result = await sender.Send(new ArchiveRecipeCommand(id, currentUserId, isAdmin), ct);
                 
-                await cacheStore.InvalidateAsync(cancellationToken: ct);
+                await cacheStore.InvalidateAsync(result.Slug, ct);
 
                 return Results.Ok(result);
         })

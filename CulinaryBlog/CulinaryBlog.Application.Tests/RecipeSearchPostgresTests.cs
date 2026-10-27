@@ -76,7 +76,7 @@ public class RecipeSearchPostgresTests
             Assert.Single((await search.SearchAsync(new("pho bo"), default)).Items);
             Assert.Equal(descriptionMatch.Id, Assert.Single((await search.SearchAsync(new("banh mi"), default)).Items).Id);
             descriptionMatch.Title = "Đậu hũ";
-            descriptionMatch.Description = null;
+            descriptionMatch.Description = string.Empty;
             await context.SaveChangesAsync();
             Assert.Equal(descriptionMatch.Id, Assert.Single((await search.SearchAsync(new("dau hu"), default)).Items).Id);
             var empty = await search.SearchAsync(new("zzzz"), default);

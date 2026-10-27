@@ -11,6 +11,7 @@ public sealed class RecipeImage : AuditableEntity
     public string OriginalUrl { get; set; } = string.Empty;
     public string? MediumUrl { get; set; }
     public string? ThumbnailUrl { get; set; }
+    public string? ResizeJobId { get; set; }
     public string? AltText { get; set; }
     public bool IsPrimary { get; set; }
     public int OrderIndex { get; set; }

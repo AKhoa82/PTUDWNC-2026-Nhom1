@@ -4,6 +4,7 @@ using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Application.Common.Exceptions;
+using CulinaryBlog.Application.Features.Recipes;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.Steps;
 
@@ -19,6 +20,9 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
 
     public async Task<RecipeStepDto> Handle(AddRecipeStepCommand request, CancellationToken cancellationToken)
     {
+        await using var transaction = await RecipeMutationTransaction.BeginAsync(
+            _context, request.RecipeId, cancellationToken);
+
         var recipe = await _context.Recipes
             .Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Id == request.RecipeId, cancellationToken);
@@ -54,6 +58,8 @@ public class AddRecipeStepCommandHandler : IRequestHandler<AddRecipeStepCommand,
         _context.RecipeSteps.Add(step);
         _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
         await _context.SaveChangesAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
 
         return new RecipeStepDto
         {

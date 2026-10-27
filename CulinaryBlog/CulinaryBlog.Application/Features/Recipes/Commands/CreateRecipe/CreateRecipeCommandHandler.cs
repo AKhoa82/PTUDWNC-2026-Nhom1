@@ -4,9 +4,7 @@ using CulinaryBlog.Domain.Entities;
 using Mapster;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
+using Npgsql;
 
 namespace CulinaryBlog.Application.Features.Recipes.Commands.CreateRecipe;
 
@@ -43,7 +41,7 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
             Id = Guid.NewGuid(),
             Title = request.Request.Title.Trim(),
             Slug = slug,
-            Description = request.Request.Description,
+            Description = request.Request.Description.Trim(),
             ImageUrl = request.Request.ImageUrl,
             PrepTimeMinutes = request.Request.PrepTimeMinutes,
             CookingTimeMinutes = request.Request.CookingTimeMinutes,
@@ -87,8 +85,29 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         }
 
         _context.Recipes.Add(recipe);
-        _context.RecipeCacheInvalidations.Add(new RecipeCacheInvalidation { RecipeSlug = recipe.Slug });
-        await _context.SaveChangesAsync(cancellationToken);
+        var cacheInvalidation = new RecipeCacheInvalidation { RecipeSlug = recipe.Slug };
+        _context.RecipeCacheInvalidations.Add(cacheInvalidation);
+
+        const int maxSaveAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                break;
+            }
+            catch (DbUpdateException exception) when (
+                attempt < maxSaveAttempts &&
+                exception.InnerException is PostgresException
+                {
+                    SqlState: "23505",
+                    ConstraintName: "IX_Recipes_Slug"
+                })
+            {
+                recipe.Slug = await GenerateUniqueSlugAsync(request.Request.Title, cancellationToken);
+                cacheInvalidation.RecipeSlug = recipe.Slug;
+            }
+        }
 
         var result = recipe.Adapt<RecipeDto>();
         result.RowVersion = recipe.RowVersion.ToString();
@@ -97,25 +116,11 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
 
     private async Task<string> GenerateUniqueSlugAsync(string title, CancellationToken cancellationToken) 
     {
-        var normalizedString = title.Normalize(NormalizationForm.FormD);
-        var stringBuilder = new StringBuilder();
-        foreach (var c in normalizedString)
-        {
-            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != UnicodeCategory.NonSpacingMark)
-            {
-                stringBuilder.Append(c);
-            }
-        }
-        var slugWithoutAccents = stringBuilder.ToString().Normalize(NormalizationForm.FormC);
-
-        var baseSlug = slugWithoutAccents.ToLowerInvariant().Trim();
-        baseSlug = Regex.Replace(baseSlug, @"[^a-z0-9\s-]", "");
-        baseSlug = Regex.Replace(baseSlug, @"\s+", "-").Trim('-');
+        var baseSlug = RecipeSlugGenerator.GenerateBaseSlug(title);
         
         var slug = baseSlug;
         var counter = 1;
-        while (await _context.Recipes.AnyAsync(r => r.Slug == slug, cancellationToken))
+        while (await _context.Recipes.IgnoreQueryFilters().AnyAsync(r => r.Slug == slug, cancellationToken))
         {
             slug = $"{baseSlug}-{counter}";
             counter++;

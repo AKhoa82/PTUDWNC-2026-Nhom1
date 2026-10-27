@@ -61,6 +61,18 @@ public sealed class RecipeRequirementTests
     }
 
     [Fact]
+    public void Create_accepts_draft_without_ingredients_steps_or_instructions()
+    {
+        var request = ValidCreateRequest();
+        request.Instructions = string.Empty;
+        request.Ingredients.Clear();
+        request.Steps.Clear();
+
+        Assert.True(new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString())).IsValid);
+    }
+
+    [Fact]
     public void Create_rejects_undefined_difficulty()
     {
         var request = ValidCreateRequest();
@@ -132,6 +144,7 @@ public sealed class RecipeRequirementTests
     [InlineData("publish")]
     [InlineData("unpublish")]
     [InlineData("archive")]
+    [InlineData("unarchive")]
     [InlineData("ingredient-add")]
     [InlineData("ingredient-update")]
     [InlineData("ingredient-delete")]
@@ -141,9 +154,16 @@ public sealed class RecipeRequirementTests
     public async Task Recipe_mutation_queues_detail_cache_invalidation(string operation)
     {
         await using var db = new RecipeAcceptanceContext();
-        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft : RecipeStatus.Published);
+        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft :
+            operation == "unarchive" ? RecipeStatus.Archived : RecipeStatus.Published);
         var userId = recipe.AuthorId.ToString();
         var ingredient = recipe.Ingredients.Single();
+        var stepId = recipe.Steps.Single().Id;
+        if (operation == "ingredient-delete")
+            db.RecipeIngredients.Add(RecipeIngredient.Create(recipe.Id, "Muối", 1, "g", null, 1));
+        if (operation == "step-delete")
+            db.RecipeSteps.Add(RecipeStep.Create(recipe.Id, 2, "Bày ra tô"));
+        await db.SaveChangesAsync();
 
         switch (operation)
         {
@@ -158,6 +178,11 @@ public sealed class RecipeRequirementTests
             case "archive":
                 await new ArchiveRecipeCommandHandler(db)
                     .Handle(new ArchiveRecipeCommand(recipe.Id, userId, false), default);
+                break;
+            case "unarchive":
+                await new ArchiveRecipeCommandHandler(db)
+                    .Handle(new ArchiveRecipeCommand(recipe.Id, userId, false, true), default);
+                Assert.Equal(RecipeStatus.Draft, recipe.Status);
                 break;
             case "ingredient-add":
                 await new AddIngredientCommandHandler(db).Handle(
@@ -187,7 +212,7 @@ public sealed class RecipeRequirementTests
             case "step-delete":
                 await new DeleteRecipeStepCommandHandler(db).Handle(new DeleteRecipeStepCommand
                 {
-                    RecipeId = recipe.Id, StepId = recipe.Steps.Single().Id,
+                    RecipeId = recipe.Id, StepId = stepId,
                     AuthorId = userId, IsAdmin = false
                 }, default);
                 break;
@@ -200,6 +225,7 @@ public sealed class RecipeRequirementTests
     [InlineData("publish")]
     [InlineData("unpublish")]
     [InlineData("archive")]
+    [InlineData("unarchive")]
     [InlineData("delete")]
     [InlineData("step-add")]
     [InlineData("step-update")]
@@ -210,7 +236,8 @@ public sealed class RecipeRequirementTests
     public async Task Authenticated_non_owner_receives_forbidden_error(string operation)
     {
         await using var db = new RecipeAcceptanceContext();
-        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft : RecipeStatus.Published);
+        var recipe = db.SeedRecipe(operation == "publish" ? RecipeStatus.Draft :
+            operation == "unarchive" ? RecipeStatus.Archived : RecipeStatus.Published);
         var otherUserId = Guid.NewGuid().ToString();
         
 
@@ -229,6 +256,10 @@ public sealed class RecipeRequirementTests
                 case "archive":
                     await new ArchiveRecipeCommandHandler(db).Handle(
                         new ArchiveRecipeCommand(recipe.Id, otherUserId, false), default);
+                    break;
+                case "unarchive":
+                    await new ArchiveRecipeCommandHandler(db).Handle(
+                        new ArchiveRecipeCommand(recipe.Id, otherUserId, false, true), default);
                     break;
                 case "delete":
                     await new CulinaryBlog.Application.Features.Recipes.Commands.DeleteRecipe.DeleteRecipeCommandHandler(
@@ -407,10 +438,54 @@ public sealed class RecipeRequirementTests
 
     private static CreateRecipeRequest ValidCreateRequest() => new()
     {
-        Title = "Phở bò Hà Nội", CategoryId = Guid.NewGuid(),
+        Title = "Phở bò Hà Nội", Description = "Món phở bò truyền thống", CategoryId = Guid.NewGuid(),
         PrepTimeMinutes = 10, CookingTimeMinutes = 0, Servings = 2,
         Instructions = "Nấu nước dùng"
     };
+    [Theory]
+    [InlineData("A    ")]
+    [InlineData("-----")]
+    [InlineData("🍜🍜🍜")]
+    public void Create_rejects_titles_without_a_valid_slug_or_five_meaningful_characters(string title)
+    {
+        var request = ValidCreateRequest();
+        request.Title = title;
+
+        var result = new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.Contains(result.Errors, error => error.PropertyName == "Request.Title");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_requires_description(string? description)
+    {
+        var request = ValidCreateRequest();
+        request.Description = description!;
+
+        var result = new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.Contains(result.Errors, error => error.PropertyName == "Request.Description");
+    }
+
+    [Theory]
+    [InlineData(2000, true)]
+    [InlineData(2001, false)]
+    public void Create_limits_description_to_2000_characters(int length, bool expected)
+    {
+        var request = ValidCreateRequest();
+        request.Description = new string('a', length);
+
+        var result = new CreateRecipeCommandValidator()
+            .Validate(new CreateRecipeCommand(request, Guid.NewGuid().ToString()));
+
+        Assert.Equal(expected, result.IsValid);
+    }
+
     [Fact]
     public async Task Create_returns_RecipeDto()
     {
@@ -454,6 +529,32 @@ public sealed class RecipeRequirementTests
 
         Assert.Equal("duplicate-title", result1.Slug);
         Assert.Equal("duplicate-title-1", result2.Slug);
+    }
+
+    [Fact]
+    public async Task Create_preserves_vietnamese_d_in_slug_and_suffixes_duplicates()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var authorId = Guid.NewGuid();
+        db.Users.Add(new User { Id = authorId, UserName = "testuser", FullName = "Test User" });
+        var category = new Category { Id = Guid.NewGuid(), Name = "Test Category", Slug = "test" };
+        db.Categories.Add(category);
+        await db.SaveChangesAsync();
+
+        var request = ValidCreateRequest();
+        request.CategoryId = category.Id;
+        request.Title = "Đậu hũ chiên";
+
+        var handler = new CreateRecipeCommandHandler(db);
+        var first = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+        var duplicate = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        request.Title = "Bún đậu mắm tôm";
+        var lowercase = await handler.Handle(new CreateRecipeCommand(request, authorId.ToString()), CancellationToken.None);
+
+        Assert.Equal("dau-hu-chien", first.Slug);
+        Assert.Equal("dau-hu-chien-1", duplicate.Slug);
+        Assert.Equal("bun-dau-mam-tom", lowercase.Slug);
     }
 
     [Fact]
@@ -538,7 +639,7 @@ public sealed class RecipeRequirementTests
         var cat1 = new Category { Id = Guid.NewGuid(), Name = "C1", Slug = "c1" };
         var cat2 = new Category { Id = Guid.NewGuid(), Name = "C2", Slug = "c2" };
         db.Categories.AddRange(cat1, cat2);
-        var recipe = new Recipe { Id = Guid.NewGuid(), Title = "A", Slug = "a", Difficulty = RecipeDifficulty.Easy, CategoryId = cat1.Id, AuthorId = authorId, Status = RecipeStatus.Draft };
+        var recipe = new Recipe { Id = Guid.NewGuid(), Title = "A", Slug = "a", Description = "Mô tả ban đầu", Difficulty = RecipeDifficulty.Easy, CategoryId = cat1.Id, AuthorId = authorId, Status = RecipeStatus.Draft };
         db.Recipes.Add(recipe);
         await db.SaveChangesAsync();
 
@@ -548,6 +649,7 @@ public sealed class RecipeRequirementTests
 
         Assert.IsType<RecipeDto>(result);
         Assert.Equal(cat2.Name, result.CategoryName);
+        Assert.Equal("Mô tả ban đầu", result.Description);
     }
 
     [Fact]
@@ -573,6 +675,33 @@ public sealed class RecipeRequirementTests
         Assert.Equal(50, result.Nutrition.Fiber);
         Assert.Equal(60, result.Nutrition.Sodium);
     }
+
+    [Fact]
+    public async Task Update_rejects_stale_row_version_even_when_values_do_not_change()
+    {
+        await using var db = new RecipeAcceptanceContext();
+        var recipe = db.SeedRecipe(RecipeStatus.Draft);
+        var request = new UpdateRecipeRequest
+        {
+            Title = recipe.Title,
+            Description = recipe.Description,
+            CategoryId = recipe.CategoryId,
+            PrepTimeMinutes = recipe.PrepTimeMinutes,
+            CookingTimeMinutes = recipe.CookingTimeMinutes,
+            Servings = recipe.Servings,
+            Difficulty = recipe.Difficulty,
+            Instructions = recipe.Instructions,
+            RowVersion = (recipe.RowVersion + 1).ToString()
+        };
+
+        var handler = new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommandHandler(db);
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(
+            new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(
+                recipe.Id, request, recipe.AuthorId.ToString(), false), CancellationToken.None));
+
+        Assert.Empty(db.RecipeCacheInvalidations);
+    }
+
     [Fact]
     public void Draft_with_valid_steps_and_ingredients_can_be_published_and_sets_publishedat()
     {

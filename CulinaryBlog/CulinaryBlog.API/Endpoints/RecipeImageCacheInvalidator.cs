@@ -1,6 +1,4 @@
-using CulinaryBlog.Application.Features.Recipes.GetRecipes;
 using Microsoft.AspNetCore.OutputCaching;
-using Microsoft.Extensions.Caching.Distributed;
 using CulinaryBlog.Application.Contracts.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Hangfire;
@@ -8,14 +6,13 @@ using Hangfire;
 namespace CulinaryBlog.API.Endpoints;
 
 public sealed class RecipeImageCacheInvalidator(
-    IApplicationDbContext db, IOutputCacheStore outputCache, IDistributedCache cache, ILogger<RecipeImageCacheInvalidator> logger)
+    IApplicationDbContext db, IOutputCacheStore outputCache, ILogger<RecipeImageCacheInvalidator> logger)
 {
     public async Task InvalidateAsync(string? slug = null, CancellationToken cancellationToken = default)
     {
         try
         {
             await outputCache.EvictByTagAsync("recipes", cancellationToken);
-            await cache.SetStringAsync(GetRecipesQueryHandler.CacheVersionKey, Guid.NewGuid().ToString("N"), new DistributedCacheEntryOptions(), cancellationToken);
             if (!string.IsNullOrEmpty(slug))
             {
                 await outputCache.EvictByTagAsync($"recipe:{slug}", cancellationToken);
@@ -40,8 +37,6 @@ public sealed class RecipeImageCacheInvalidator(
         if (pending.Count == 0) return;
         
         await outputCache.EvictByTagAsync("recipes", ct);
-        await cache.SetStringAsync(GetRecipesQueryHandler.CacheVersionKey, Guid.NewGuid().ToString("N"),
-            new DistributedCacheEntryOptions(), ct);
 
         var slugs = pending.Where(x => !string.IsNullOrEmpty(x.RecipeSlug))
             .Select(x => x.RecipeSlug!)

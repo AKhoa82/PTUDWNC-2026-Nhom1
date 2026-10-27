@@ -1,13 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ArrowRight, AlertCircle, ChefHat, Eye, EyeOff, Lock, Mail } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
+import { clearAuth } from "@/lib/auth-client";
+import { signIn, signOut, useSession } from "next-auth/react";
+import { saveAuthSession, type LoginResponse } from "../../../lib/auth-session";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5018/api";
+const emailLoginEndpoint = `${apiUrl.replace(/\/$/, "")}/v1/auth/login`;
 
 const loginSchema = z.object({
   email: z.string().trim().email("Email không hợp lệ."),
@@ -17,6 +22,8 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
+  const { data: session } = useSession();
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -25,26 +32,60 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  useEffect(() => {
+    if (session?.backendAuth) {
+      saveAuthSession({
+        username: session.backendAuth.username,
+        fullName: session.backendAuth.fullName,
+        accessToken: session.backendAuth.accessToken,
+        accessTokenExpiresAt: session.backendAuth.accessTokenExpiresAt,
+      }, "google");
+      if (new URLSearchParams(window.location.search).get("google") === "success") {
+        router.replace("/");
+      }
+    }
+  }, [session, router]);
+
+  const onGoogleSignOut = async () => {
+    clearAuth();
+    await signOut({ redirectTo: "/auth/login" });
+  };
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("error")) {
+      setServerError("Không thể đăng nhập bằng Google. Vui lòng thử lại.");
+    }
+  }, []);
+
+  const onGoogleSignIn = async () => {
+    setIsSubmitting(true);
+    setServerError("");
+    setSuccessMessage("");
+    try {
+      await signIn("google", { redirectTo: "/auth/login?google=success" });
+    } catch {
+      setIsSubmitting(false);
+      setServerError("Không thể bắt đầu đăng nhập Google. Vui lòng thử lại.");
+    }
+  };
   const onSubmit = async (values: LoginFormData) => {
     setIsSubmitting(true);
     setServerError("");
     setSuccessMessage("");
 
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
+      const response = await fetch(emailLoginEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(values),
       });
       const responseText = await response.text();
-      let data: {
-        message?: string;
-        user?: { accessToken?: string; refreshToken?: string; accessTokenExpiresAt?: string };
-      } = {};
+      let data: Partial<LoginResponse> & { message?: string; detail?: string } = {};
 
       if (responseText.trim()) {
         try {
-          data = JSON.parse(responseText) as { message?: string };
+          data = JSON.parse(responseText) as Partial<LoginResponse> & { message?: string; detail?: string };
         } catch {
           data = {};
         }
@@ -57,19 +98,24 @@ export default function LoginPage() {
             ? "Tài khoản đã bị khóa trong 15 phút do nhập sai quá nhiều lần."
           : response.status === 503
             ? "Cơ sở dữ liệu đang tạm thời không khả dụng. Vui lòng thử lại sau."
-            : data.message ?? "Đăng nhập không thành công. Vui lòng thử lại.";
+            : data.detail ?? data.message ?? "Đăng nhập không thành công. Vui lòng thử lại.";
 
         throw new Error(message);
       }
 
-      if (data.user?.accessToken && data.user.refreshToken) {
-        localStorage.setItem("accessToken", data.user.accessToken);
-        localStorage.setItem("refreshToken", data.user.refreshToken);
-        if (data.user.accessTokenExpiresAt) {
-          localStorage.setItem("accessTokenExpiresAt", data.user.accessTokenExpiresAt);
-        }
+      if (!data.accessToken || !data.accessTokenExpiresAt ||
+          (process.env.NODE_ENV !== "production" && !data.refreshToken)) {
+        throw new Error("Phản hồi đăng nhập thiếu thông tin phiên.");
       }
-      setSuccessMessage(data.message ?? "Đăng nhập thành công.");
+      saveAuthSession({
+        username: data.username ?? "",
+        fullName: data.fullName ?? "",
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        accessTokenExpiresAt: data.accessTokenExpiresAt,
+      });
+      setSuccessMessage("Đăng nhập thành công.");
+      router.push("/");
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Không thể kết nối đến máy chủ.");
     } finally {
@@ -95,13 +141,26 @@ export default function LoginPage() {
 
           {serverError && <div className="mb-5 flex items-center gap-2 rounded-lg border border-[#b9674a]/30 bg-[#b9674a]/10 p-3.5 text-sm text-[#8d3c25]" role="alert"><AlertCircle className="h-4 w-4 shrink-0" /> {serverError}</div>}
           {successMessage && <div className="mb-5 rounded-lg border border-[#063c2f]/30 bg-[#063c2f]/10 p-3.5 text-sm text-[#063c2f]" role="status">{successMessage}</div>}
+          {session?.backendAuth && <div className="mb-5 rounded-lg border border-[#063c2f]/30 bg-[#063c2f]/10 p-3.5 text-sm text-[#063c2f]" role="status">Bạn đang đăng nhập bằng Google. <Link href="/" className="font-semibold underline underline-offset-4">Về trang chủ</Link><button type="button" onClick={onGoogleSignOut} className="ml-3 font-semibold underline underline-offset-4">Đăng xuất / đổi tài khoản</button></div>}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Địa chỉ Email *</span><span className="relative block"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type="email" placeholder="vd: name@culinaryblog.vn" className={`${fieldClass(Boolean(errors.email))} pl-10`} {...register("email")} /></span>{errors.email && <span className="mt-1 block text-xs text-[#b9674a]">{errors.email.message}</span>}</label>
             <label className="block"><span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.15em] text-[#063c2f]">Mật khẩu *</span><span className="relative block"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#c6a15b]" /><input type={showPassword ? "text" : "password"} placeholder="••••••••" className={`${fieldClass(Boolean(errors.password))} pl-10 pr-11`} {...register("password")} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#8d958f]" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span>{errors.password && <span className="mt-1 block text-xs text-[#b9674a]">{errors.password.message}</span>}</label>
             <button type="submit" disabled={isSubmitting} className="flex h-[52px] w-full items-center justify-center gap-2 rounded-lg bg-[#c6a15b] text-sm font-semibold uppercase tracking-wider text-[#022c24] transition hover:bg-[#063c2f] hover:text-[#fbf8f1] disabled:opacity-50">{isSubmitting ? "Đang đăng nhập..." : <>Đăng nhập <ArrowRight className="h-4 w-4" /></>}</button>
           </form>
-          <p className="mt-7 border-t border-[#e5dece] pt-5 text-center text-sm text-[#8d958f]">Chưa có tài khoản? <Link href="/" className="font-bold text-[#063c2f] underline underline-offset-4">Đăng ký ngay →</Link></p>
+          <div className="my-6">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="h-px flex-1 bg-[#e5dece]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8d958f]">Hoặc</span>
+              <div className="h-px flex-1 bg-[#e5dece]" />
+            </div>
+            <button type="button" onClick={onGoogleSignIn} disabled={isSubmitting} className="flex h-[46px] w-full items-center justify-center gap-3 rounded-lg border border-[#e5dece] bg-white px-4 text-sm font-medium text-[#3c4043] transition hover:bg-[#f8faff] disabled:opacity-50">
+              <span aria-hidden="true" className="text-lg font-bold text-[#4285f4]">G</span>
+              {isSubmitting ? "Đang chuyển đến Google..." : "Tiếp tục với Google"}
+            </button>
+          </div>
+
+          <p className="mt-7 border-t border-[#e5dece] pt-5 text-center text-sm text-[#8d958f]">Chưa có tài khoản? <Link href="/auth/register" className="font-bold text-[#063c2f] underline underline-offset-4">Đăng ký ngay →</Link></p>
         </div>
       </section>
     </main>

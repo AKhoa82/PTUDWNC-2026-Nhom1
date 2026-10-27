@@ -6,13 +6,16 @@ namespace CulinaryBlog.Infrastructure.Persistence;
 
 public static class DatabaseSeeder
 {
-    public static async Task SeedAsync(ApplicationDbContext context)
+    public static async Task SeedAsync(ApplicationDbContext context, Guid authorId)
     {
+        if (!await context.Users.AnyAsync(user => user.Id == authorId))
+            throw new ArgumentException("A valid sample recipe author is required.", nameof(authorId));
+
         // 1. Seed Categories (đảm bảo ít nhất 20 categories)
         var categoryList = await EnsureCategoriesAsync(context);
 
         // 2. Seed Recipes (đảm bảo ít nhất 100 recipes, mỗi recipe >= 10 ingredients và >= 5 steps)
-        await EnsureRecipesAsync(context, categoryList);
+        await EnsureRecipesAsync(context, categoryList, authorId);
     }
 
     private static async Task<List<Category>> EnsureCategoriesAsync(ApplicationDbContext context)
@@ -75,7 +78,7 @@ public static class DatabaseSeeder
         return existingCategories;
     }
 
-    private static async Task EnsureRecipesAsync(ApplicationDbContext context, List<Category> categories)
+    private static async Task EnsureRecipesAsync(ApplicationDbContext context, List<Category> categories, Guid authorId)
     {
         var currentRecipeCount = await context.Recipes.CountAsync();
         if (currentRecipeCount >= 100)
@@ -126,6 +129,7 @@ public static class DatabaseSeeder
                 Status = RecipeStatus.Published,
                 Instructions = instructionsMarkdown,
                 CategoryId = category.Id,
+                AuthorId = authorId,
                 CreatedAt = DateTime.UtcNow.AddDays(-random.Next(1, 90)),
                 PublishedAt = DateTime.UtcNow.AddDays(-random.Next(0, 30)),
                 Ingredients = ingredients,

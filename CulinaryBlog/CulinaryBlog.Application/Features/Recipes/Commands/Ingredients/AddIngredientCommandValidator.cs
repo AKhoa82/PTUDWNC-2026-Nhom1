@@ -9,6 +9,10 @@ public class AddIngredientCommandValidator : AbstractValidator<AddIngredientComm
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Tên nguyên liệu không được để trống.")
             .MaximumLength(100).WithMessage("Tên nguyên liệu không vượt quá 100 ký tự.");
+
+        RuleFor(x => x.Quantity)
+            .GreaterThan(0).When(x => x.Quantity.HasValue)
+            .WithMessage("Số lượng phải lớn hơn 0.");
         
         RuleFor(x => x.Notes)
             .MaximumLength(200).WithMessage("Ghi chú không vượt quá 200 ký tự.");

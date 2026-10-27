@@ -27,6 +27,7 @@ public class GlobalExceptionHandler : IExceptionHandler
 
         var problemDetails = new ProblemDetails
         {
+            Type = "about:blank",
             Instance = httpContext.Request.Path
         };
 
@@ -45,7 +46,11 @@ public class GlobalExceptionHandler : IExceptionHandler
             };
 
             httpContext.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
-            await httpContext.Response.WriteAsJsonAsync(validationProblemDetails, cancellationToken);
+            await httpContext.Response.WriteAsJsonAsync(
+                validationProblemDetails,
+                options: null,
+                contentType: "application/problem+json",
+                cancellationToken: cancellationToken);
             return true;
         }
         else if (exception is RecipeImageValidationException imageValidationException)
@@ -54,7 +59,11 @@ public class GlobalExceptionHandler : IExceptionHandler
             problemDetails.Title = "Invalid Image Data";
             problemDetails.Detail = imageValidationException.Message;
             httpContext.Response.StatusCode = problemDetails.Status.Value;
-            await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+            await httpContext.Response.WriteAsJsonAsync(
+                problemDetails,
+                options: null,
+                contentType: "application/problem+json",
+                cancellationToken: cancellationToken);
             return true;
         }
 
@@ -122,7 +131,11 @@ public class GlobalExceptionHandler : IExceptionHandler
         }
 
         httpContext.Response.StatusCode = problemDetails.Status.Value;
-        await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+        await httpContext.Response.WriteAsJsonAsync(
+            problemDetails,
+            options: null,
+            contentType: "application/problem+json",
+            cancellationToken: cancellationToken);
 
         return true;
     }

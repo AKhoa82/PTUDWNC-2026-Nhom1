@@ -13,4 +13,5 @@ public interface IFileStorageService
     Task UploadStreamAsync(Stream stream, string fileName, string contentType, StorageObjectReference reference, CancellationToken ct = default);
     Task DeleteAsync(StorageObjectReference reference, CancellationToken ct = default);
     Task<bool> ExistsAsync(StorageObjectReference reference, CancellationToken ct = default);
+    Task<byte[]> DownloadBytesAsync(StorageObjectReference reference, CancellationToken ct = default);
 }

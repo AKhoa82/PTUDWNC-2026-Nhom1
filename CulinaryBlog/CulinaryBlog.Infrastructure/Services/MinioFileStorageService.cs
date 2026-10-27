@@ -65,7 +65,8 @@ public sealed class MinioFileStorageService(
         buffer.Position = 0;
         var file = new FormFile(buffer, 0, buffer.Length, "file", fileName)
         {
-            Headers = new HeaderDictionary(), ContentType = contentType
+            Headers = new HeaderDictionary(),
+            ContentType = contentType
         };
         await UploadAsync(file, reference, cancellationToken);
     }
@@ -75,6 +76,39 @@ public sealed class MinioFileStorageService(
         await EnsureBucketAsync(ct);
         await client.PutObjectAsync(new PutObjectArgs().WithBucket(reference.BucketName)
             .WithObject(reference.ObjectKey).WithStreamData(stream).WithObjectSize(length).WithContentType(contentType), ct);
+    }
+
+    public async Task<byte[]> DownloadBytesAsync(StorageObjectReference reference, CancellationToken ct = default)
+    {
+        ValidateReference(reference);
+
+        byte[] result = [];
+
+        await client.GetObjectAsync(
+            new GetObjectArgs()
+                .WithBucket(reference.BucketName)
+                .WithObject(reference.ObjectKey)
+                .WithCallbackStream(stream =>
+                {
+                    using var output = new MemoryStream();
+                    var buffer = new byte[81920];
+
+                    int count;
+
+                    while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        if (output.Length + count > FileValidationHelper.MaxFileSizeBytes)
+                        {
+                            throw new InvalidOperationException("Source image exceeds the 5MB limit.");
+                        }
+                        output.Write(buffer, 0, count);
+                    }
+
+                    result = output.ToArray();
+                }),
+            ct);
+
+        return result;
     }
 
     public async Task DeleteAsync(StorageObjectReference reference, CancellationToken cancellationToken = default)

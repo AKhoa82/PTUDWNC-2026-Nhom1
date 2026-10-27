@@ -1,10 +1,12 @@
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.API.Endpoints;
+using CulinaryBlog.API.Infrastructure;
 using CulinaryBlog.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using CulinaryBlog.Domain.Entities;
 using Microsoft.AspNetCore.Identity;
 using CulinaryBlog.Application.Features.Auth.Register;
+using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Common.Behaviors;
 using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Infrastructure.Security;
@@ -30,6 +32,8 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Text.Json;
+using Microsoft.AspNetCore.RateLimiting;
+using StackExchange.Redis;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -60,16 +64,14 @@ if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32
 if (OperatingSystem.IsWindows())
     builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>((_, _) => false);
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("Frontend", policy =>
-    {
-        policy
-            .WithOrigins("http://localhost:3000", "http://localhost:5173")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
-});
+builder.Services.AddFrontendCors(builder.Configuration);
+builder.Services.AddHttpClient();
+builder.Services.AddTrustedForwardedHeaders(builder.Configuration);
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Configure ConnectionStrings:Redis.");
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddSingleton<IAuthRateLimitCounter, RedisAuthRateLimitCounter>();
 builder.Services.AddDataProtection();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -106,6 +108,7 @@ builder.Services.AddIdentityCore<User>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
 builder.Services.AddValidatorsFromAssembly(typeof(RegisterCommand).Assembly);
 builder.Services.AddMediatR(cfg =>
 {
@@ -126,6 +129,8 @@ builder.Services.AddStackExchangeRedisOutputCache(options =>
 });
 builder.Services.AddOutputCache(options =>
 {
+    options.AddPolicy("RecipeList", builder =>
+        builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeListCachePolicy>());
     options.AddPolicy("RecipeDetail", builder => 
         builder.AddPolicy<CulinaryBlog.API.Infrastructure.RecipeDetailCachePolicy>());
 });
@@ -207,12 +212,14 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-app.UseCors("Frontend");
+app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 app.UseRateLimiter();
 app.UseRecipeImageRequestLimits();
 app.UseOutputCache();
@@ -265,11 +272,13 @@ app.MapGet("/api/v1/recipes", async (
     string? difficulty = null,
     int? maxCookTime = null,
     int? minServings = null,
-    string sort = "-createdAt") =>
+    string sort = "-createdAt",
+    Guid? authorId = null,
+    string? status = null) =>
 {
     string? currentUserId = null;
     bool isAdmin = false;
-    
+
     if (user?.Identity?.IsAuthenticated == true)
     {
         currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -286,7 +295,9 @@ app.MapGet("/api/v1/recipes", async (
         MinServings: minServings,
         Sort: sort,
         CurrentUserId: currentUserId,
-        IsAdmin: isAdmin
+        IsAdmin: isAdmin,
+        AuthorId: authorId,
+        StatusRaw: status
     );
 
     var result = await mediator.Send(query, cancellationToken);
@@ -297,6 +308,7 @@ app.MapGet("/api/v1/recipes", async (
 .WithSummary("Danh sách công thức")
 .Produces<PagedResult<RecipeSummaryDto>>(StatusCodes.Status200OK)
 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.CacheOutput("RecipeList")
 .AllowAnonymous();
 
 app.MapGet("/api/v1/recipes/search", async (
@@ -342,6 +354,69 @@ app.MapGet("/api/v1/recipes/{slug}", async (
 .CacheOutput("RecipeDetail")
 .AllowAnonymous();
 
+app.MapPost("/api/v1/recipes", async (
+    CreateRecipeRequest request,
+    IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
+    RecipeImageCacheInvalidator cacheStore,
+    CancellationToken cancellationToken) =>
+{
+    // Validation handled by CreateRecipeCommandValidator (FluentValidation)
+
+    string? authorId = null;
+    if (user?.Identity?.IsAuthenticated == true)
+    {
+        authorId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    }
+
+    var recipe = await mediator.Send(
+        new CreateRecipeCommand(request, authorId),
+        cancellationToken);
+
+    await cacheStore.InvalidateAsync(recipe.Slug, cancellationToken);
+
+    return Results.Created($"/api/v1/recipes/{recipe.Slug}", recipe);
+})
+.WithName("CreateRecipeV1")
+.Produces<RecipeDto>(StatusCodes.Status201Created)
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status409Conflict)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.RequireAuthorization("AuthorPolicy")
+.WithSummary("Tạo công thức");
+
+app.MapPut("/api/v1/recipes/{id:guid}", async (
+    Guid id,
+    CulinaryBlog.Application.DTOs.UpdateRecipeRequest request,
+    IMediator mediator,
+    System.Security.Claims.ClaimsPrincipal user,
+    RecipeImageCacheInvalidator cacheStore,
+    CancellationToken cancellationToken) =>
+{
+    string? currentUserId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+    if (string.IsNullOrEmpty(currentUserId)) throw new UnauthorizedAccessException("Token không có user ID.");
+
+    bool isAdmin = user.IsInRole("Admin");
+
+    var result = await mediator.Send(
+        new CulinaryBlog.Application.Features.Recipes.Commands.UpdateRecipe.UpdateRecipeCommand(id, request, currentUserId, isAdmin),
+        cancellationToken);
+
+    await cacheStore.InvalidateAsync(result.Slug, cancellationToken);
+
+    return Results.Ok(result);
+})
+.WithName("UpdateRecipeV1")
+.RequireAuthorization("AuthorPolicy")
+.Produces<RecipeDto>(StatusCodes.Status200OK)
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status403Forbidden)
+.ProducesProblem(StatusCodes.Status404NotFound)
+.ProducesProblem(StatusCodes.Status409Conflict)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.WithSummary("Cập nhật công thức");
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -357,24 +432,33 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    var adminId = Guid.Parse("99999999-9999-9999-9999-999999999999");
-    var defaultAdmin = await dbContext.Users.FirstOrDefaultAsync(u => u.Email == "admin@culinaryblog.com");
-    if (defaultAdmin == null)
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+    if (app.Environment.IsDevelopment() &&
+        builder.Configuration["DevAdmin:Password"] is { Length: > 0 } adminPassword)
     {
-        defaultAdmin = new User
+        const string adminEmail = "admin@culinaryblog.local";
+        var admin = await userManager.FindByEmailAsync(adminEmail);
+        if (admin is null)
         {
-            Id = adminId,
-            UserName = "admin",
-            NormalizedUserName = "ADMIN",
-            Email = "admin@culinaryblog.com",
-            NormalizedEmail = "ADMIN@CULINARYBLOG.COM",
-            EmailConfirmed = true,
-            FullName = "System Admin",
-            SecurityStamp = Guid.NewGuid().ToString(),
-            ConcurrencyStamp = Guid.NewGuid().ToString()
-        };
-        dbContext.Users.Add(defaultAdmin);
-        await dbContext.SaveChangesAsync();
+            admin = new User
+            {
+                UserName = "dev-admin",
+                Email = adminEmail,
+                EmailConfirmed = true,
+                FullName = "Quản trị viên phát triển"
+            };
+            var createResult = await userManager.CreateAsync(admin, adminPassword);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create development admin: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+
+            var roleResult = await userManager.AddToRoleAsync(admin, "Admin");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign development admin role: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+        else if (!await userManager.IsInRoleAsync(admin, "Admin"))
+        {
+            throw new InvalidOperationException($"{adminEmail} already exists without the Admin role. Use another account or resolve the existing account manually.");
+        }
     }
 
     if (!await dbContext.Categories.AnyAsync())
@@ -387,13 +471,36 @@ using (var scope = app.Services.CreateScope())
         await dbContext.SaveChangesAsync();
     }
 
-    if (!await dbContext.Recipes.AnyAsync())
+    const string sampleAuthorUserName = "sample-recipe-author";
+    if (!await dbContext.Recipes.IgnoreQueryFilters().AnyAsync())
     {
+        var sampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+        if (sampleAuthor is null)
+        {
+            sampleAuthor = new User
+            {
+                UserName = sampleAuthorUserName,
+                Email = "sample-recipe-author@culinaryblog.local",
+                FullName = "Tác giả công thức mẫu"
+            };
+            var createResult = await userManager.CreateAsync(sampleAuthor);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException($"Could not create sample recipe author: {string.Join(", ", createResult.Errors.Select(error => error.Description))}");
+        }
+
+        if (!await userManager.IsInRoleAsync(sampleAuthor, "Author"))
+        {
+            var roleResult = await userManager.AddToRoleAsync(sampleAuthor, "Author");
+            if (!roleResult.Succeeded)
+                throw new InvalidOperationException($"Could not assign Author role to sample recipe author: {string.Join(", ", roleResult.Errors.Select(error => error.Description))}");
+        }
+
         var monVietId = Guid.Parse("11111111-0000-0000-0000-000000000001");
         var monAId    = Guid.Parse("11111111-0000-0000-0000-000000000002");
         var monAuId   = Guid.Parse("11111111-0000-0000-0000-000000000003");
 
-        dbContext.Recipes.AddRange(
+        var sampleRecipes = new[]
+        {
             new Recipe
             {
                 Title              = "Phở Bò Hà Nội",
@@ -406,7 +513,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Hard,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -421,7 +528,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monVietId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -436,7 +543,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Easy,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -451,7 +558,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Expert,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -466,7 +573,7 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             },
             new Recipe
@@ -481,12 +588,32 @@ using (var scope = app.Services.CreateScope())
                 Difficulty         = RecipeDifficulty.Medium,
                 Status             = RecipeStatus.Published,
                 CategoryId         = monAuId,
-                AuthorId           = defaultAdmin.Id,
+                AuthorId           = sampleAuthor.Id,
                 PublishedAt        = DateTime.UtcNow
             }
-        );
+        };
+
+        foreach (var recipe in sampleRecipes)
+            SampleRecipeContent.Ensure(recipe);
+
+        dbContext.Recipes.AddRange(sampleRecipes);
 
         await dbContext.SaveChangesAsync();
+    }
+
+    var existingSampleAuthor = await userManager.FindByNameAsync(sampleAuthorUserName);
+    if (existingSampleAuthor is not null)
+    {
+        var existingSampleRecipes = await dbContext.Recipes
+            .Where(recipe => recipe.AuthorId == existingSampleAuthor.Id)
+            .Include(recipe => recipe.Ingredients)
+            .Include(recipe => recipe.Steps)
+            .ToListAsync();
+        var hasMissingContent = false;
+        foreach (var recipe in existingSampleRecipes)
+            hasMissingContent |= SampleRecipeContent.Ensure(recipe, dbContext);
+        if (hasMissingContent)
+            await dbContext.SaveChangesAsync();
     }
 }
 
@@ -549,6 +676,11 @@ app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration config) =>
 .WithSummary("Khai báo Sitemap cho Bot tìm kiếm")
 .AllowAnonymous();
 // ---------------------------
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<ImageResizeReconciliationJob>(
+    "reconcile-image-resizes", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
+
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<WelcomeEmailReconciliationJob>(
+    "reconcile-welcome-emails", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
 
 app.MapControllers();
 

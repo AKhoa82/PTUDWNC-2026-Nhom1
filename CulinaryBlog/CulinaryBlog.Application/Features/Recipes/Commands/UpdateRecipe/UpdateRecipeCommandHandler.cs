@@ -56,6 +56,9 @@ public class UpdateRecipeCommandHandler : IRequestHandler<UpdateRecipeCommand, R
                     "RowVersion không hợp lệ.")
             });
         }
+        if (recipe.RowVersion != clientRowVersion)
+            throw new ConflictException("Dữ liệu đã bị thay đổi bởi người dùng khác. Vui lòng tải lại trang.");
+
         _context.Recipes.Entry(recipe).Property(r => r.RowVersion).OriginalValue = clientRowVersion;
 
         recipe.Update(
