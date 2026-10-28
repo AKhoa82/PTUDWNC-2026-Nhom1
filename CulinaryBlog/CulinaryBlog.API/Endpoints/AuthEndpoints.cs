@@ -17,6 +17,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using CulinaryBlog.Application.Features.Auth.GetCurrentUser;
+using CulinaryBlog.Application.Features.Auth.UpdateProfile;
+using System.Text.Json;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -60,6 +62,18 @@ public static class AuthEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPatch("/me", UpdateCurrentUser)
+            .RequireAuthorization("AuthorPolicy")
+            .WithName("UpdateCurrentUserProfile")
+            .WithSummary("FR-AUTH-007: Cập nhật hồ sơ cá nhân")
+            .Produces<UserProfileDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesValidationProblem(
+                StatusCodes.Status422UnprocessableEntity);
         return endpoints;
     }
 
@@ -253,6 +267,115 @@ public static class AuthEndpoints
         }
 
         return Results.Ok(profile);
+    }
+
+    private static async Task<IResult> UpdateCurrentUser(
+    HttpRequest request,
+    ClaimsPrincipal user,
+    IMediator mediator,
+    CancellationToken cancellationToken)
+    {
+        var userIdClaim =
+            user.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? user.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Results.Unauthorized();
+        }
+
+        static IResult InvalidBody(string message)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    ["body"] = [message]
+                },
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+
+        JsonDocument bodyDocument;
+        try
+        {
+            bodyDocument = await JsonDocument.ParseAsync(
+                request.Body, cancellationToken: cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return InvalidBody("Dữ liệu phải là JSON hợp lệ.");
+        }
+
+        using var document = bodyDocument;
+        var body = document.RootElement;
+
+        if (body.ValueKind != JsonValueKind.Object)
+        {
+            return InvalidBody("Dữ liệu phải là một JSON object.");
+        }
+
+        var properties = body.EnumerateObject().ToArray();
+
+        // Không cho cập nhật Email, UserName hay field khác.
+        if (properties.Any(p =>
+                p.Name != "fullName"
+                && p.Name != "avatarUrl"))
+        {
+            return InvalidBody(
+                "Chỉ được cập nhật fullName và avatarUrl.");
+        }
+
+        // Tránh các key trùng lặp trong JSON.
+        if (properties.GroupBy(p => p.Name)
+            .Any(group => group.Count() > 1))
+        {
+            return InvalidBody(
+                "Dữ liệu không được chứa tên thuộc tính trùng lặp.");
+        }
+
+        var hasFullName = body.TryGetProperty(
+            "fullName", out var fullNameElement);
+
+        var hasAvatarUrl = body.TryGetProperty(
+            "avatarUrl", out var avatarUrlElement);
+
+        if (hasFullName &&
+            fullNameElement.ValueKind != JsonValueKind.String)
+        {
+            return InvalidBody(
+                "fullName phải là chuỗi ký tự.");
+        }
+
+        if (hasAvatarUrl &&
+            avatarUrlElement.ValueKind != JsonValueKind.String &&
+            avatarUrlElement.ValueKind != JsonValueKind.Null)
+        {
+            return InvalidBody(
+                "avatarUrl phải là chuỗi URL hoặc null.");
+        }
+
+        var fullName = hasFullName
+            ? fullNameElement.GetString()
+            : null;
+
+        var avatarUrl =
+            hasAvatarUrl &&
+            avatarUrlElement.ValueKind == JsonValueKind.String
+                ? avatarUrlElement.GetString()
+                : null;
+
+        var command = new UpdateProfileCommand(
+            UserId: userId,
+            HasFullName: hasFullName,
+            FullName: fullName,
+            HasAvatarUrl: hasAvatarUrl,
+            AvatarUrl: avatarUrl
+        );
+
+        var updatedProfile = await mediator.Send(
+            command,
+            cancellationToken);
+
+        return Results.Ok(updatedProfile);
     }
 
     private static AuthResponseDto PrepareAuthResponse(

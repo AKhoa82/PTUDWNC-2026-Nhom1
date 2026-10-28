@@ -11,10 +11,13 @@ import {
   CircleAlert,
   LayoutDashboard,
   Mail,
+  Pencil,
   RefreshCcw,
   ShieldCheck,
   UserRound,
 } from "lucide-react";
+
+import { ProfileEditForm } from "@/components/profile/ProfileEditForm";
 
 import {
   fetchWithAuth,
@@ -80,6 +83,8 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,7 +247,16 @@ export default function ProfilePage() {
         <div className="relative px-6 pb-8 sm:px-8">
           <div className="-mt-14 flex flex-col gap-5 sm:-mt-16 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl border-4 border-[#FBF8F1] bg-[#E5DECE] shadow-md">
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveSuccess(false);
+                  setEditing(true);
+                }}
+                aria-label="Thay đổi ảnh đại diện"
+                title="Chỉnh sửa ảnh đại diện"
+                className="flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-4 border-[#FBF8F1] bg-[#E5DECE] shadow-md transition-all hover:ring-2 hover:ring-[#C6A15B]"
+              >
                 {profile.avatarUrl && !avatarFailed ? (
                   <img
                     src={profile.avatarUrl}
@@ -253,7 +267,7 @@ export default function ProfilePage() {
                 ) : (
                   <UserRound className="h-12 w-12 text-[#8D958F]" />
                 )}
-              </div>
+              </button>
 
               <div className="min-w-0 space-y-2 sm:pb-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -312,14 +326,54 @@ export default function ProfilePage() {
 
       {/* Thông tin tài khoản */}
       <section className="rounded-2xl border border-[#E5DECE] bg-[#FBF8F1] p-6 shadow-sm sm:p-8">
-        <div className="mb-6 border-b border-[#E5DECE] pb-4">
-          <h3 className="font-editorial text-xl font-bold text-[#1C2421]">
-            Thông tin tài khoản
-          </h3>
-          <p className="mt-2 text-xs text-[#8D958F]">
-            Những thông tin được cung cấp từ tài khoản của bạn.
-          </p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-[#E5DECE] pb-4">
+          <div>
+            <h3 className="font-editorial text-xl font-bold text-[#1C2421]">
+              Thông tin tài khoản
+            </h3>
+            <p className="mt-2 text-xs text-[#8D958F]">
+              Quản lý thông tin hồ sơ cá nhân của bạn.
+            </p>
+          </div>
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setSaveSuccess(false);
+                setEditing(true);
+              }}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#022C24] px-4 py-2.5 text-xs font-semibold text-[#FBF8F1] transition-colors hover:bg-[#063C2F]"
+            >
+              <Pencil className="h-4 w-4 text-[#C6A15B]" />
+              Chỉnh sửa hồ sơ
+            </button>
+          )}
         </div>
+
+        {saveSuccess && !editing && (
+          <div
+            role="status"
+            className="mb-5 flex items-center gap-2 rounded-lg border border-[#063C2F]/20 bg-[#063C2F]/5 px-4 py-3 text-sm text-[#063C2F]"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            Hồ sơ cá nhân đã được cập nhật thành công.
+          </div>
+        )}
+
+        {editing && (
+          <div className="mb-6">
+            <ProfileEditForm
+              profile={profile}
+              onCancel={() => setEditing(false)}
+              onSaved={(updatedProfile) => {
+                setProfile(updatedProfile);
+                setAvatarFailed(false);
+                setEditing(false);
+                setSaveSuccess(true);
+              }}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <InfoItem
