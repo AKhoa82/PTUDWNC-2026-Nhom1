@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, type FormEvent } from "react";
@@ -159,19 +158,21 @@ export function Navbar({
 
           {isLoggedIn ? (
             <>
-              <Link
-                href="/profile"
-                title="Công thức đã lưu"
-                className="relative rounded-lg p-2 text-[#F5F0E6]/80 hover:text-[#C6A15B]"
-              >
-                <Bookmark className="h-5 w-5" />
+              {canManage && (
+                <Link
+                  href="/profile"
+                  title="Công thức đã lưu"
+                  className="relative rounded-lg p-2 text-[#F5F0E6]/80 hover:text-[#C6A15B]"
+                >
+                  <Bookmark className="h-5 w-5" />
 
-                {savedCount > 0 && (
-                  <span className="absolute -right-1 -top-1 rounded-full bg-[#B9674A] px-1.5 text-[10px] text-white">
-                    {savedCount}
-                  </span>
-                )}
-              </Link>
+                  {savedCount > 0 && (
+                    <span className="absolute -right-1 -top-1 rounded-full bg-[#B9674A] px-1.5 text-[10px] text-white">
+                      {savedCount}
+                    </span>
+                  )}
+                </Link>
+              )}
 
               {canManage && (
                 <>
@@ -193,15 +194,17 @@ export function Navbar({
                 </>
               )}
 
-              <Link
-                href="/profile"
-                className="flex items-center gap-2 rounded-full border border-[#C6A15B]/30 px-3 py-2 text-xs hover:bg-[#063C2F]"
-              >
-                <UserRound className="h-4 w-4 text-[#C6A15B]" />
-                <span className="hidden xl:inline">
-                  {userName}
-                </span>
-              </Link>
+              {canManage && (
+                <Link
+                  href="/profile"
+                  className="flex items-center gap-2 rounded-full border border-[#C6A15B]/30 px-3 py-2 text-xs hover:bg-[#063C2F]"
+                >
+                  <UserRound className="h-4 w-4 text-[#C6A15B]" />
+                  <span className="hidden xl:inline">
+                    {userName}
+                  </span>
+                </Link>
+              )}
               <button type="button" onClick={handleLogout} disabled={loggingOut}
                 className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-[#F5F0E6] hover:bg-[#063C2F] disabled:opacity-50">
                 <LogOut className="h-4 w-4" /> {loggingOut ? "Đang đăng xuất..." : "Đăng xuất"}
@@ -292,13 +295,15 @@ export function Navbar({
           <div className="mt-4 flex flex-col gap-2 border-t border-[#063C2F] pt-4">
             {isLoggedIn ? (
               <>
-                <Link
-                  href="/profile"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="rounded-lg border border-[#24604B] px-4 py-3 text-sm"
-                >
-                  Hồ sơ cá nhân
-                </Link>
+                {canManage && (
+                  <Link
+                    href="/profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="rounded-lg border border-[#24604B] px-4 py-3 text-sm"
+                  >
+                    Hồ sơ cá nhân
+                  </Link>
+                )}
 
                 {canManage && (
                   <>
