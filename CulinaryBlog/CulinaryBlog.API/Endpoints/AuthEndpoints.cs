@@ -16,6 +16,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using CulinaryBlog.Application.Features.Auth.GetCurrentUser;
 
 namespace CulinaryBlog.API.Endpoints;
 
@@ -51,6 +52,14 @@ public static class AuthEndpoints
             .Produces<AuthResponseDto>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
+        group.MapGet("/me", GetCurrentUser)
+            .RequireAuthorization("AuthorPolicy")
+            .WithName("GetCurrentUserProfile")
+            .WithSummary("FR-AUTH-006: Xem hồ sơ cá nhân")
+            .Produces<UserProfileDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         return endpoints;
     }
 
@@ -222,6 +231,28 @@ public static class AuthEndpoints
             cancellationToken);
 
         return Results.Created(string.Empty, PrepareAuthResponse(response, httpContext, environment));
+    }
+
+    private static async Task<IResult> GetCurrentUser(ClaimsPrincipal user, IMediator mediator, CancellationToken cancellationToken)
+    {
+        var userIdClaim = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var profile = await mediator.Send(new GetCurrentUserQuery(userId), cancellationToken);
+
+        if (profile is null)
+        {
+            return Results.Problem(
+                title: "User Not Found",
+                detail: "Không tìm thấy tài khoản người dùng.",
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        return Results.Ok(profile);
     }
 
     private static AuthResponseDto PrepareAuthResponse(
