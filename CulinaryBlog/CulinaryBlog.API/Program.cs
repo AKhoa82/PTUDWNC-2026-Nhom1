@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using CulinaryBlog.Application.Features.Auth.Register;
 using CulinaryBlog.Application.Features.Auth.GoogleLogin;
 using CulinaryBlog.Application.Common.Behaviors;
+using CulinaryBlog.Application.Common.Telemetry;
 using CulinaryBlog.Application.Contracts.Security;
 using CulinaryBlog.Infrastructure.Security;
 using FluentValidation;
@@ -35,7 +36,12 @@ using System.Text.Json;
 using Microsoft.AspNetCore.RateLimiting;
 using StackExchange.Redis;
 using Serilog;
+using Serilog.Context;
+using Serilog.Events;
 using Serilog.Formatting.Compact;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 if ((args.Contains("--apply") && !args.Contains("--storage-backfill")) ||
     (args.Contains("--storage-backfill") && args.Contains("--storage-inventory")))
@@ -58,10 +64,41 @@ if (args.Contains("--storage-backfill") || args.Contains("--storage-inventory"))
     return;
 }
 
-builder.Host.UseSerilog((context, services, logger) => logger
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .WriteTo.Console(new RenderedCompactJsonFormatter()));
+// --- FR-OBS-002: Cấu hình Structured Logging với Serilog ---
+builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+{
+    var isDev = context.HostingEnvironment.IsDevelopment();
+    var logFilePath = Path.Combine(context.HostingEnvironment.ContentRootPath, "logs", "culinaryblog-.log");
+    var seqServerUrl = context.Configuration["Seq:ServerUrl"];
+
+    loggerConfiguration
+        .MinimumLevel.Is(isDev ? LogEventLevel.Debug : LogEventLevel.Information)
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+        .MinimumLevel.Override("Hangfire", LogEventLevel.Information)
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", CulinaryBlogTelemetry.ServiceName)
+        .Enrich.WithProperty("Environment", context.HostingEnvironment.EnvironmentName)
+        // Sink 1: Console (structured JSON)
+        .WriteTo.Console(new RenderedCompactJsonFormatter())
+        // Sink 2: File (rolling daily)
+        .WriteTo.File(
+            new RenderedCompactJsonFormatter(),
+            path: logFilePath,
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            shared: true);
+
+    // Sink 3: Seq (development)
+    if (isDev && !string.IsNullOrWhiteSpace(seqServerUrl))
+    {
+        loggerConfiguration.WriteTo.Seq(seqServerUrl);
+    }
+});
+// -----------------------------------------------------------
 
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
@@ -145,7 +182,7 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 
 builder.Services.AddProblemDetails();
 
-// --- Bổ sung FR-OBS-001: Khởi tạo Health Checks chuẩn SRS ---
+// --- FR-OBS-001: Khởi tạo Health Checks chuẩn SRS ---
 var rawMinioEndpoint = (builder.Configuration["MinIO:Endpoint"] ?? "localhost:9000").Trim();
 var minioUseSsl = builder.Configuration.GetValue<bool>("MinIO:UseSSL");
 if (!rawMinioEndpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
@@ -163,7 +200,67 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(name: "PostgreSQL", tags: new[] { "ready" })
     .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "Redis", tags: new[] { "ready" })
     .AddUrlGroup(new Uri(minioHealthUrl), name: "MinIO");
-// -----------------------------------------------------------
+// ----------------------------------------------------
+
+// --- FR-OBS-003: Distributed Tracing & Metrics với OpenTelemetry ---
+var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
+    ?? builder.Configuration["OpenTelemetry:OtlpEndpoint"]
+    ?? (builder.Environment.IsDevelopment()
+        ? $"{(builder.Configuration["Seq:ServerUrl"] ?? "http://localhost:5341").TrimEnd('/')}/ingest/otlp/v1/traces"
+        : null);
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource
+        .AddService(
+            serviceName: CulinaryBlogTelemetry.ServiceName,
+            serviceVersion: "1.0.0"))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddSource(CulinaryBlogTelemetry.ActivitySourceName)
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.RecordException = true;
+                options.EnrichWithHttpRequest = (activity, httpRequest) =>
+                {
+                    if (httpRequest.HttpContext.Request.Headers.TryGetValue(CorrelationIdMiddleware.HeaderName, out var correlationId))
+                    {
+                        activity.SetTag("correlation.id", correlationId.ToString());
+                    }
+                };
+            })
+            .AddHttpClientInstrumentation(options => options.RecordException = true)
+           .AddEntityFrameworkCoreInstrumentation();
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint) && Uri.TryCreate(otlpEndpoint, UriKind.Absolute, out var otlpUri))
+        {
+            tracing.AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = otlpUri;
+                if (otlpUri.AbsolutePath.Contains("/ingest/otlp", StringComparison.OrdinalIgnoreCase))
+                {
+                    exporterOptions.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                }
+            });
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddMeter(CulinaryBlogTelemetry.MeterName)
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation();
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint) && Uri.TryCreate(otlpEndpoint, UriKind.Absolute, out var otlpUri) &&
+            !otlpUri.AbsolutePath.Contains("/v1/traces", StringComparison.OrdinalIgnoreCase))
+        {
+            metrics.AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = otlpUri;
+            });
+        }
+    });
+// -------------------------------------------------------------------
 
 builder.Services.AddExceptionHandler<CulinaryBlog.API.Infrastructure.GlobalExceptionHandler>();
 builder.Services.AddRecipeImageFeature();
@@ -220,12 +317,28 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseForwardedHeaders();
+app.UseMiddleware<CorrelationIdMiddleware>(); // FR-OBS-002: Gắn CorrelationId, RequestPath, TraceId và đo thời gian request
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+
+// FR-OBS-002 & CONS-010: Đẩy UserId vào LogContext cho mọi log entry sau khi xác thực
+app.Use(async (context, next) =>
+{
+    var userId = context.User?.Identity?.IsAuthenticated == true
+        ? (context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+           ?? context.User.FindFirst("sub")?.Value)
+        : null;
+
+    using (LogContext.PushProperty("UserId", userId))
+    {
+        await next();
+    }
+});
+
 app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 app.UseRateLimiter();
 app.UseRecipeImageRequestLimits();
@@ -242,7 +355,7 @@ if (builder.Configuration.GetValue<bool>("Hangfire:DashboardEnabled"))
     app.MapHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = []
-    }).RequireAuthorization("AdminPolicy"); // Đã khôi phục kiểm tra quyền Admin
+    }).RequireAuthorization("AdminPolicy");
 }
 
 app.MapGet("/api/v1/categories", async (
@@ -368,8 +481,6 @@ app.MapPost("/api/v1/recipes", async (
     RecipeImageCacheInvalidator cacheStore,
     CancellationToken cancellationToken) =>
 {
-    // Validation handled by CreateRecipeCommandValidator (FluentValidation)
-
     string? authorId = null;
     if (user?.Identity?.IsAuthenticated == true)
     {
@@ -633,7 +744,7 @@ app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<CulinaryBlog
 if (!File.Exists(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "sitemap.xml")))
     BackgroundJob.Enqueue<GenerateSitemapJob>(job => job.ExecuteAsync(CancellationToken.None));
 
-// --- Bổ sung FR-OBS-001: 3 Health Check Endpoints ---
+// --- FR-OBS-001: 3 Health Check Endpoints ---
 var healthCheckOptions = new HealthCheckOptions
 {
     ResponseWriter = async (context, report) =>
@@ -648,7 +759,9 @@ var healthCheckOptions = new HealthCheckOptions
                 e => new
                 {
                     status = e.Value.Status.ToString(),
-                    description = e.Value.Description ?? "OK"
+                    description = e.Value.Description
+                        ?? e.Value.Exception?.Message
+                        ?? (e.Value.Status == HealthStatus.Healthy ? "OK" : "Unhealthy")
                 })
         };
         await context.Response.WriteAsync(JsonSerializer.Serialize(response));
@@ -668,12 +781,11 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions
     Predicate = _ => false,
     ResponseWriter = healthCheckOptions.ResponseWriter
 }).AllowAnonymous();
-// ---------------------------------------------------
+// --------------------------------------------
 
 // --- Khai báo Robots.txt ---
 app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration config) =>
 {
-    // Tự động lấy URL công khai từ cấu hình hoặc từ chính Request Host hiện tại
     var publicBaseUrl = (config["BackendBaseUrl"] 
         ?? config["PublicBaseUrl"] 
         ?? $"{httpContext.Request.Scheme}://{httpContext.Request.Host}").TrimEnd('/');
@@ -685,6 +797,7 @@ app.MapGet("/robots.txt", (HttpContext httpContext, IConfiguration config) =>
 .WithSummary("Khai báo Sitemap cho Bot tìm kiếm")
 .AllowAnonymous();
 // ---------------------------
+
 app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<ImageResizeReconciliationJob>(
     "reconcile-image-resizes", job => job.ExecuteAsync(CancellationToken.None), "* * * * *");
 
