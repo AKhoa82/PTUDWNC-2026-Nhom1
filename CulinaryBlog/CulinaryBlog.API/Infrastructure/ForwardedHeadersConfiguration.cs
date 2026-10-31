@@ -23,7 +23,7 @@ public static class ForwardedHeadersConfiguration
 
         services.Configure<ForwardedHeadersOptions>(options =>
         {
-            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             options.ForwardLimit = forwardLimit;
             foreach (var proxy in proxies)
                 options.KnownProxies.Add(proxy);
