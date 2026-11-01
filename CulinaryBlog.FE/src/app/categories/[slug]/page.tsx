@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { RecipeCard } from "../../../components/recipes/RecipeCard";
+import RecipeCard from "../../../components/recipes/RecipeCard";
 import { recipeRequest, RecipeRequestError, type PagedRecipes, type RecipeCategory } from "../../../lib/recipes";
 
 type PageProps = { params: Promise<{ slug: string }> };
