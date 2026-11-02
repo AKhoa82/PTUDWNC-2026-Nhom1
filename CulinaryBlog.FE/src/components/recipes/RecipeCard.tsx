@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ArrowRight, Clock3, UsersRound, UtensilsCrossed } from "lucide-react";
 import { difficultyLabels, recipeImageUrl, type RecipeSummary } from "../../lib/recipes";
 
-// Sửa lại thành export default function để không bị lỗi import
 export default function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
   const image = recipeImageUrl(recipe.imageUrl);
   return (
