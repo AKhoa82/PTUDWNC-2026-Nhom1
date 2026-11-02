@@ -42,3 +42,11 @@ volumes:
   culinaryblog-postgres-data:
   culinaryblog-redis-data:
   culinaryblog-minio-data:
+  seq:
+    image: datalust/seq:latest
+    container_name: seq_culinaryblog
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5341:80"
+    restart: unless-stopped

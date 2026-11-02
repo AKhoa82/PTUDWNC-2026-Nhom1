@@ -1,3 +1,4 @@
+using CulinaryBlog.Application.Common.Telemetry;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
 using CulinaryBlog.Domain.Entities;
@@ -19,6 +20,8 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
 
     public async Task<RecipeDto> Handle(CreateRecipeCommand request, CancellationToken cancellationToken) 
     {
+        using var activity = CulinaryBlogTelemetry.ActivitySource.StartActivity("CreateRecipe");
+
         if (!Guid.TryParse(request.AuthorId, out var actorId) || actorId == Guid.Empty)
             throw new UnauthorizedAccessException("A valid authenticated author is required.");
             
@@ -109,6 +112,9 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
             }
         }
 
+        // FR-OBS-003: Ghi nhận custom business metric & trace khi tạo recipe thành công
+        CulinaryBlogTelemetry.RecordRecipeCreated(recipe.Id, recipe.CategoryId, recipe.AuthorId);
+
         var result = recipe.Adapt<RecipeDto>();
         result.RowVersion = recipe.RowVersion.ToString();
         return result;
@@ -128,4 +134,3 @@ public class CreateRecipeCommandHandler : IRequestHandler<CreateRecipeCommand, R
         return slug;
     }
 }
-
