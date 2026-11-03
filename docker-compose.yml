@@ -26,7 +26,7 @@ services:
       - "127.0.0.1:8025:8025"
 
   minio:
-    image: quay.io/minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
     container_name: culinaryblog-minio
     command: server /data --console-address ":9001"
     environment:
@@ -38,10 +38,6 @@ services:
     volumes:
       - culinaryblog-minio-data:/data
 
-volumes:
-  culinaryblog-postgres-data:
-  culinaryblog-redis-data:
-  culinaryblog-minio-data:
   seq:
     image: datalust/seq:latest
     container_name: seq_culinaryblog
@@ -50,3 +46,8 @@ volumes:
     ports:
       - "5341:80"
     restart: unless-stopped
+
+volumes:
+  culinaryblog-postgres-data:
+  culinaryblog-redis-data:
+  culinaryblog-minio-data:
