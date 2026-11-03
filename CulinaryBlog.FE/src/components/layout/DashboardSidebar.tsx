@@ -25,34 +25,6 @@ interface DashboardSidebarProps {
   roleLabel?: string;
 }
 
-const menuItems = [
-  {
-    label: "Tổng quan Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Quản lý công thức",
-    href: "/dashboard/recipes",
-    icon: UtensilsCrossed,
-  },
-  {
-    label: "Thêm công thức mới",
-    href: "/dashboard/recipes/new",
-    icon: PlusCircle,
-  },
-  {
-    label: "Quản lý danh mục",
-    href: "/dashboard/categories",
-    icon: FolderTree,
-  },
-  {
-    label: "Hồ sơ cá nhân",
-    href: "/profile",
-    icon: UserRound,
-  },
-];
-
 export function DashboardSidebar({
   userName,
   roleLabel,
@@ -74,6 +46,36 @@ export function DashboardSidebar({
   const displayName = userName ?? session?.name ?? "Tác giả";
   const displayRole = roleLabel ?? (session?.role === "admin" ? "Quản trị viên" : "Tài khoản tác giả");
   const isAdmin = session?.role === "admin" || roleLabel === "Quản trị viên";
+
+  // Đưa menuItems vào trong Component để dùng được biến isAdmin
+  const menuItems = [
+    {
+      label: "Tổng quan Dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      label: "Quản lý công thức",
+      href: "/dashboard/recipes",
+      icon: UtensilsCrossed,
+    },
+    {
+      label: "Thêm công thức mới",
+      href: "/dashboard/recipes/new",
+      icon: PlusCircle,
+    },
+    // Chỉ thêm item "Quản lý danh mục" vào mảng nếu là Admin
+    isAdmin ? {
+      label: "Quản lý danh mục",
+      href: "/dashboard/categories",
+      icon: FolderTree,
+    } : null,
+    {
+      label: "Hồ sơ cá nhân",
+      href: "/profile",
+      icon: UserRound,
+    },
+  ].filter(Boolean); // Lọc bỏ giá trị null
 
   return (
     <aside className="flex w-full flex-col justify-between border-b border-[#E5DECE] bg-[#FBF8F1] p-4 md:h-full md:w-64 md:shrink-0 md:overflow-hidden md:border-b-0 md:border-r">
@@ -107,13 +109,15 @@ export function DashboardSidebar({
           </p>
 
           {menuItems.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
+            // Do đã filter null, ta có thể an tâm ép kiểu
+            const safeItem = item as { label: string, href: string, icon: any };
+            const Icon = safeItem.icon;
+            const active = pathname === safeItem.href;
 
             return (
               <Link
-                key={item.href}
-                href={item.href}
+                key={safeItem.href}
+                href={safeItem.href}
                 aria-current={active ? "page" : undefined}
                 className={`
                   flex items-center justify-between
@@ -128,7 +132,7 @@ export function DashboardSidebar({
               >
                 <span className="flex items-center gap-3">
                   <Icon className={`h-4 w-4 ${active ? "text-[#C6A15B]" : "text-[#8D958F]"}`} />
-                  {item.label}
+                  {safeItem.label}
                 </span>
                 {active && <ChevronRight className="h-4 w-4 text-[#C6A15B]" />}
               </Link>

@@ -6,6 +6,7 @@ interface Category {
   slug: string;
   description?: string;
   createdAt?: string;
+  recipeCount?: number; // FR-CAT-001: Bổ sung trường số lượng
 }
 
 // Chuyển fetch data sang chạy trên Server
@@ -63,12 +64,17 @@ export default async function CategoriesPage() {
               </span>
             </div>
             
-            <p className="text-sm leading-relaxed text-[#66726B] line-clamp-3">
+            <p className="text-sm leading-relaxed text-[#66726B] line-clamp-3 mb-3">
               {item.description || "Đang cập nhật mô tả chi tiết cho danh mục này."}
             </p>
             
+            {/* FR-CAT-001: Hiển thị số lượng công thức ra ngoài UI */}
+            <div className="text-xs font-bold text-[#A8894D]">
+              {item.recipeCount || 0} công thức
+            </div>
+
             <div className="mt-auto pt-4 text-xs font-semibold text-[#063C2F] group-hover:text-[#A8894D] transition-colors">
-              Xem công thức →
+              Xem chi tiết →
             </div>
           </Link>
         ))}

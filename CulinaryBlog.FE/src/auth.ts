@@ -98,6 +98,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (backendAuth) {
         const { refreshToken: _refreshToken, ...clientAuth } = backendAuth;
         session.backendAuth = clientAuth;
+        
+       // --- FIX TRUY CẬP ADMIN CATEGORY ---
+    // Ép kiểu clientAuth về any ngay từ đầu để TS ngừng phàn nàn về thuộc tính user
+    const safeClientAuth = clientAuth as any;
+
+    if (session.user && safeClientAuth.user) {
+      const roles = safeClientAuth.user.roles;
+      const role = safeClientAuth.user.role;
+      
+      if (roles && Array.isArray(roles) && roles.length > 0) {
+        (session.user as any).role = roles[0];
+      } else if (role) {
+        (session.user as any).role = role;
+      }
+    }
+    // -----------------------------------
       }
       return session;
     },

@@ -251,13 +251,25 @@ builder.Services.AddOpenTelemetry()
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation();
 
-        if (!string.IsNullOrWhiteSpace(otlpEndpoint) && Uri.TryCreate(otlpEndpoint, UriKind.Absolute, out var otlpUri) &&
-            !otlpUri.AbsolutePath.Contains("/v1/traces", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
-            metrics.AddOtlpExporter(exporterOptions =>
+            var metricsEndpoint = otlpEndpoint.Replace("/v1/traces", "/v1/metrics", StringComparison.OrdinalIgnoreCase);
+            
+           if (Uri.TryCreate(metricsEndpoint, UriKind.Absolute, out var metricsUri))
             {
-                exporterOptions.Endpoint = otlpUri;
-            });
+            
+                metrics.AddOtlpExporter((exporterOptions, metricReaderOptions) =>
+                {
+                    exporterOptions.Endpoint = metricsUri;
+                    if (metricsUri.AbsolutePath.Contains("/ingest/otlp", StringComparison.OrdinalIgnoreCase))
+                    {
+                        exporterOptions.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                    }
+                    
+                    // FIX LỖI CHẬM METRICS: Ép đẩy dữ liệu mỗi 5 giây (thay vì 60 giây mặc định)
+                    metricReaderOptions.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = 5000;
+                });
+            }
         }
     });
 // -------------------------------------------------------------------

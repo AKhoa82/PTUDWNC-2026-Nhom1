@@ -61,8 +61,8 @@ export default function CategoryManagement() {
         method,
         headers: {
           "Content-Type": "application/json",
-          // 2. Gửi kèm Token hợp lệ để tránh lỗi 401 Unauthorized
-          Authorization: `Bearer ${(session as any)?.accessToken}`, 
+          // FIX: Trỏ đúng vào backendAuth.accessToken
+          Authorization: `Bearer ${(session as any)?.backendAuth?.accessToken}`, 
         },
         body: JSON.stringify(formData),
       });
@@ -92,7 +92,8 @@ export default function CategoryManagement() {
       const res = await fetch(`http://localhost:5018/api/v1/categories/${id}`, {
         method: "DELETE",
         headers: { 
-          Authorization: `Bearer ${(session as any)?.accessToken}` 
+          // FIX: Trỏ đúng vào backendAuth.accessToken
+          Authorization: `Bearer ${(session as any)?.backendAuth?.accessToken}` 
         },
       });
 
@@ -179,7 +180,6 @@ export default function CategoryManagement() {
               <th className="px-6 py-4">Tên</th>
               <th className="px-6 py-4">Slug</th>
               <th className="px-6 py-4">Mô tả</th>
-              {/* 3. Hiển thị số lượng công thức theo FR-CAT-001 */}
               <th className="px-6 py-4 text-center">Số công thức</th>
               <th className="px-6 py-4 text-right">Thao tác</th>
             </tr>
