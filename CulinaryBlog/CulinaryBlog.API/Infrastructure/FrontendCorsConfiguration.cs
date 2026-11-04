@@ -28,6 +28,7 @@ public static class FrontendCorsConfiguration
             policy.WithOrigins(origins.Distinct(StringComparer.Ordinal).Select(origin => origin!).ToArray())
                 .AllowAnyHeader()
                 .AllowAnyMethod()
+                .WithExposedHeaders(CorrelationIdMiddleware.HeaderName)
                 .AllowCredentials()));
 
         return services;
