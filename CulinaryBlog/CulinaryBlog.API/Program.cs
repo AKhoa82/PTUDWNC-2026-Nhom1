@@ -591,6 +591,29 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // --- FIX ISSUE 1: TẠO TÀI KHOẢN ADMIN ĐỂ TEST ĐĂNG NHẬP BẰNG EMAIL ---
+    var testAdminEmail = "admin.test@gmail.com";
+    var testAdmin = await userManager.FindByEmailAsync(testAdminEmail);
+    if (testAdmin == null)
+    {
+        testAdmin = new User
+        {
+            UserName = "admin-test",
+            Email = testAdminEmail,
+            EmailConfirmed = true,
+            FullName = "Admin Test Email"
+        };
+        // Tạo tài khoản với mật khẩu cố định
+        await userManager.CreateAsync(testAdmin, "Password123!");
+        await userManager.AddToRoleAsync(testAdmin, "Admin");
+        Console.WriteLine($"[Seeder] Đã tạo tài khoản Admin test: {testAdminEmail} / Password123!");
+    }
+    else if (!await userManager.IsInRoleAsync(testAdmin, "Admin"))
+    {
+        await userManager.AddToRoleAsync(testAdmin, "Admin");
+    }
+    // ----------------------------------------------------------
+
     if (!await dbContext.Categories.AnyAsync())
     {
         var monViet = new Category { Id = Guid.Parse("11111111-0000-0000-0000-000000000001"), Name = "Món Việt", Slug = "mon-viet", Description = "Các món ăn truyền thống Việt Nam" };

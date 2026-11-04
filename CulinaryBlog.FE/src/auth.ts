@@ -99,21 +99,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const { refreshToken: _refreshToken, ...clientAuth } = backendAuth;
         session.backendAuth = clientAuth;
         
-       // --- FIX TRUY CẬP ADMIN CATEGORY ---
-    // Ép kiểu clientAuth về any ngay từ đầu để TS ngừng phàn nàn về thuộc tính user
-    const safeClientAuth = clientAuth as any;
-
-    if (session.user && safeClientAuth.user) {
-      const roles = safeClientAuth.user.roles;
-      const role = safeClientAuth.user.role;
-      
-      if (roles && Array.isArray(roles) && roles.length > 0) {
-        (session.user as any).role = roles[0];
-      } else if (role) {
-        (session.user as any).role = role;
-      }
-    }
-    // -----------------------------------
+        // --- FIX ISSUE 1: Trích xuất Role trực tiếp từ JWT Payload thay vì clientAuth.user ---
+        if (clientAuth.accessToken && session.user) {
+          try {
+            // Tách payload từ JWT (phần ở giữa 2 dấu chấm)
+            const payloadBase64 = clientAuth.accessToken.split('.')[1];
+            // Giải mã payload
+            const decodedPayload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf-8'));
+            
+            // .NET Identity thường lưu role trong claim này
+            const roleClaim = decodedPayload["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] || decodedPayload.role;
+            
+            if (roleClaim) {
+              (session.user as any).role = Array.isArray(roleClaim) ? roleClaim[0] : roleClaim;
+            }
+          } catch (error) {
+            console.error("Lỗi khi giải mã JWT để lấy Role:", error);
+          }
+        }
+        // ----------------------------------------------------------------------------------
       }
       return session;
     },

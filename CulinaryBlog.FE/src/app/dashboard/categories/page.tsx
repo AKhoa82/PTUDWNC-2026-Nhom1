@@ -1,10 +1,9 @@
 ﻿"use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { AUTH_CHANGED_EVENT, readAuthSession, type AuthSession } from "../../../lib/auth-session";
 
-// Bổ sung recipeCount theo yêu cầu FR-CAT-001
 interface Category {
   id: string;
   name: string;
@@ -14,28 +13,54 @@ interface Category {
 }
 
 export default function CategoryManagement() {
-  const { data: session, status } = useSession();
   const router = useRouter();
   
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [isSessionReady, setIsSessionReady] = useState(false);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Bổ sung trường slug vào Form State
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState("");
-  const [formData, setFormData] = useState({ name: "", slug: "", description: "" });
+  
+  // Xóa bỏ trường slug khỏi form state, Backend sẽ tự lo
+  const [formData, setFormData] = useState({ name: "", description: "" });
 
-  // 1. Phân quyền giao diện: Đẩy người dùng không phải Admin ra khỏi trang (FR-CAT-003/004/005)
+  // Hàm quét tìm Access Token từ mọi nguồn (Google NextAuth hoặc Email LocalStorage)
+  const getAccessToken = () => {
+    if (!session) return "";
+    return (session as any).accessToken 
+        || (session as any).backendAuth?.accessToken 
+        || (typeof window !== "undefined" ? localStorage.getItem("accessToken") : "");
+  };
+
+  // Hỗ trợ kiểm tra quyền Admin từ mọi nguồn đăng nhập
   useEffect(() => {
-    if (status === "loading") return;
-    const userRole = (session?.user as any)?.role;
-    if (!session || userRole !== "Admin") {
+    const syncSession = () => {
+      setSession(readAuthSession());
+      setIsSessionReady(true);
+    };
+    syncSession();
+    window.addEventListener("storage", syncSession);
+    window.addEventListener(AUTH_CHANGED_EVENT, syncSession);
+    return () => {
+      window.removeEventListener("storage", syncSession);
+      window.removeEventListener(AUTH_CHANGED_EVENT, syncSession);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSessionReady) return;
+    
+    const userRole = session?.role?.toLowerCase(); 
+    if (!session || userRole !== "admin") {
       router.push("/dashboard"); 
     } else {
       fetchCategories();
     }
-  }, [session, status, router]);
+  }, [session, isSessionReady, router]);
 
   const fetchCategories = async () => {
     try {
@@ -61,15 +86,15 @@ export default function CategoryManagement() {
         method,
         headers: {
           "Content-Type": "application/json",
-          // FIX: Trỏ đúng vào backendAuth.accessToken
-          Authorization: `Bearer ${(session as any)?.backendAuth?.accessToken}`, 
+          // Dùng hàm lấy token đa nguồn
+          Authorization: `Bearer ${getAccessToken()}`, 
         },
         body: JSON.stringify(formData),
       });
 
       if (!res.ok) throw new Error("Lưu thất bại. Vui lòng kiểm tra lại quyền hoặc dữ liệu.");
       
-      setFormData({ name: "", slug: "", description: "" });
+      setFormData({ name: "", description: "" });
       setIsEditing(false);
       setCurrentId("");
       fetchCategories();
@@ -82,7 +107,7 @@ export default function CategoryManagement() {
   const handleEdit = (category: Category) => {
     setIsEditing(true);
     setCurrentId(category.id);
-    setFormData({ name: category.name, slug: category.slug, description: category.description });
+    setFormData({ name: category.name, description: category.description });
   };
 
   const handleDelete = async (id: string) => {
@@ -92,8 +117,8 @@ export default function CategoryManagement() {
       const res = await fetch(`http://localhost:5018/api/v1/categories/${id}`, {
         method: "DELETE",
         headers: { 
-          // FIX: Trỏ đúng vào backendAuth.accessToken
-          Authorization: `Bearer ${(session as any)?.backendAuth?.accessToken}` 
+          // Dùng hàm lấy token đa nguồn
+          Authorization: `Bearer ${getAccessToken()}` 
         },
       });
 
@@ -110,37 +135,24 @@ export default function CategoryManagement() {
     }
   };
 
-  if (status === "loading" || loading) return <div className="p-6">Đang kiểm tra quyền truy cập...</div>;
+  if (!isSessionReady || loading) return <div className="p-6">Đang kiểm tra quyền truy cập...</div>;
 
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">Quản lý Danh mục</h1>
 
-      {/* Form Tạo/Cập nhật */}
+      {/* Form Tạo/Cập nhật (Đã xóa Input Slug) */}
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-8 space-y-4 border border-gray-100">
         <h2 className="text-lg font-semibold text-gray-800">{isEditing ? "Cập nhật danh mục" : "Tạo danh mục mới"}</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Tên danh mục</label>
-            <input
-              type="text"
-              required
-              className="w-full border border-gray-300 p-2 rounded mt-1 focus:ring-[#063C2F] focus:border-[#063C2F]"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Slug (Đường dẫn tĩnh)</label>
-            <input
-              type="text"
-              required
-              className="w-full border border-gray-300 p-2 rounded mt-1 focus:ring-[#063C2F] focus:border-[#063C2F]"
-              value={formData.slug}
-              onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-              placeholder="VD: mon-viet"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Tên danh mục</label>
+          <input
+            type="text"
+            required
+            className="w-full border border-gray-300 p-2 rounded mt-1 focus:ring-[#063C2F] focus:border-[#063C2F]"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">Mô tả</label>
@@ -163,7 +175,7 @@ export default function CategoryManagement() {
             <button 
               type="button" 
               className="bg-gray-100 text-gray-700 px-5 py-2 rounded font-medium hover:bg-gray-200 transition-colors"
-              onClick={() => { setIsEditing(false); setFormData({ name: "", slug: "", description: "" }); }}
+              onClick={() => { setIsEditing(false); setFormData({ name: "", description: "" }); }}
             >
               Hủy
             </button>
@@ -178,7 +190,7 @@ export default function CategoryManagement() {
           <thead className="bg-gray-50 text-gray-700 uppercase font-semibold border-b">
             <tr>
               <th className="px-6 py-4">Tên</th>
-              <th className="px-6 py-4">Slug</th>
+              <th className="px-6 py-4">Slug (Hệ thống)</th>
               <th className="px-6 py-4">Mô tả</th>
               <th className="px-6 py-4 text-center">Số công thức</th>
               <th className="px-6 py-4 text-right">Thao tác</th>
