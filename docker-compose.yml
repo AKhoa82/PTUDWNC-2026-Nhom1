@@ -26,7 +26,8 @@ services:
       - "127.0.0.1:8025:8025"
 
   minio:
-    image: quay.io/minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
+    user: "root"
     container_name: culinaryblog-minio
     command: server /data --console-address ":9001"
     environment:
@@ -38,7 +39,23 @@ services:
     volumes:
       - culinaryblog-minio-data:/data
 
+  seq:
+    image: datalust/seq:latest
+    container_name: seq_culinaryblog
+    environment:
+      - ACCEPT_EULA=Y
+      # FIX ISSUE 5: Nhận mật khẩu từ file .env
+      - SEQ_FIRSTRUN_ADMINPASSWORD=${SEQ_ADMIN_PASSWORD}
+    ports:
+      # FIX ISSUE 5: Giới hạn port nội bộ (localhost)
+      - "127.0.0.1:5341:80"
+      - "127.0.0.1:4317:4317"
+    volumes:
+      - culinaryblog-seq-data-v3:/data
+    restart: unless-stopped
+
 volumes:
   culinaryblog-postgres-data:
   culinaryblog-redis-data:
   culinaryblog-minio-data:
+  culinaryblog-seq-data-v3:

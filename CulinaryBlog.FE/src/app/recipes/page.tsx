@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowRight, RotateCcw, Search, UtensilsCrossed } from "lucide-react";
-import { RecipeCard } from "../../components/recipes/RecipeCard";
+import RecipeCard from "../../components/recipes/RecipeCard";
 import { recipeRequest, type PagedRecipes, type RecipeCategory } from "../../lib/recipes";
 
 export const metadata: Metadata = { title: "Khám phá công thức | CulinaryBlog" };

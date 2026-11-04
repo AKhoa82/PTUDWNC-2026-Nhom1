@@ -1,7 +1,4 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import Link from "next/link";
 
 interface Category {
   id: string;
@@ -9,69 +6,79 @@ interface Category {
   slug: string;
   description?: string;
   createdAt?: string;
+  recipeCount?: number; // FR-CAT-001: Bổ sung trường số lượng
 }
 
-export default function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+// Chuyển fetch data sang chạy trên Server
+async function getCategories(): Promise<Category[]> {
+  const res = await fetch("http://localhost:5018/api/v1/categories", {
+    next: { revalidate: 60 }, // Cache 60 giây giúp tải trang siêu tốc
+  });
+  
+  if (!res.ok) throw new Error("Không thể tải danh sách danh mục");
+  return res.json();
+}
 
-  useEffect(() => {
-    fetch('http://localhost:5018/api/v1/categories')
-      .then((res) => {
-        if (!res.ok) throw new Error('Không thể tải danh sách danh mục');
-        return res.json();
-      })
-      .then((data: Category[]) => {
-        setCategories(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setLoading(false);
-      });
-  }, []);
+export default async function CategoriesPage() {
+  let categories: Category[] = [];
+  let error: string | null = null;
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-[300px]">
-        <p className="text-gray-500 font-medium">Đang tải danh mục món ăn...</p>
-      </div>
-    );
+  try {
+    categories = await getCategories();
+  } catch (err: any) {
+    error = err.message;
   }
 
   if (error) {
     return (
-      <div className="p-4 text-center text-red-500 bg-red-50 rounded-lg max-w-md mx-auto my-8">
+      <div className="p-4 text-center text-red-500 bg-red-50 rounded-lg max-w-md mx-auto my-12 border border-red-100">
         Lỗi: {error}
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800 border-b pb-3">
-        Danh Mục Món Ăn
-      </h1>
+    <main className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <header className="mb-10 border-b border-[#E5DECE] pb-6">
+        <h1 className="font-editorial text-3xl font-bold text-[#1C2421] sm:text-4xl">
+          Danh Mục Món Ăn
+        </h1>
+        <p className="mt-2 text-sm text-[#66726B]">
+          Khám phá các công thức nấu ăn theo từng phân loại chuẩn vị.
+        </p>
+      </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
         {categories.map((item) => (
-          <div
+          <Link
+            href={`/categories/${item.slug}`}
             key={item.id}
-            className="p-5 border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all bg-white"
+            className="group flex flex-col rounded-xl border border-[#E5DECE] bg-[#FBF8F1] p-6 shadow-sm transition-all hover:border-[#C6A15B]/60 hover:shadow-md"
           >
-            <h2 className="text-xl font-semibold text-emerald-600 mb-1">
-              <Link href={`/categories/${item.slug}`} className="hover:underline">{item.name}</Link>
-            </h2>
-            <span className="inline-block bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-md font-mono mb-3">
-              /{item.slug}
-            </span>
-            <p className="text-gray-600 text-sm leading-relaxed">
-              {item.description || 'Chưa có mô tả.'}
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-editorial text-xl font-bold text-[#1C2421] group-hover:text-[#063C2F] transition-colors">
+                {item.name}
+              </h2>
+              <span className="rounded-full bg-[#E7DED0] px-2.5 py-1 font-mono text-[10px] font-semibold text-[#A8894D]">
+                /{item.slug}
+              </span>
+            </div>
+            
+            <p className="text-sm leading-relaxed text-[#66726B] line-clamp-3 mb-3">
+              {item.description || "Đang cập nhật mô tả chi tiết cho danh mục này."}
             </p>
-          </div>
+            
+            {/* FR-CAT-001: Hiển thị số lượng công thức ra ngoài UI */}
+            <div className="text-xs font-bold text-[#A8894D]">
+              {item.recipeCount || 0} công thức
+            </div>
+
+            <div className="mt-auto pt-4 text-xs font-semibold text-[#063C2F] group-hover:text-[#A8894D] transition-colors">
+              Xem chi tiết →
+            </div>
+          </Link>
         ))}
       </div>
-    </div>
+    </main>
   );
 }

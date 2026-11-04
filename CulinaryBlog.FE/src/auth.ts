@@ -98,6 +98,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (backendAuth) {
         const { refreshToken: _refreshToken, ...clientAuth } = backendAuth;
         session.backendAuth = clientAuth;
+        
+        // --- FIX ISSUE 1: Trích xuất Role trực tiếp từ JWT Payload thay vì clientAuth.user ---
+        if (clientAuth.accessToken && session.user) {
+          try {
+            // Tách payload từ JWT (phần ở giữa 2 dấu chấm)
+            const payloadBase64 = clientAuth.accessToken.split('.')[1];
+            // Giải mã payload
+            const decodedPayload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString('utf-8'));
+            
+            // .NET Identity thường lưu role trong claim này
+            const roleClaim = decodedPayload["http://schemas.microsoft.com/ws/2008/06/identity/claims/role"] || decodedPayload.role;
+            
+            if (roleClaim) {
+              (session.user as any).role = Array.isArray(roleClaim) ? roleClaim[0] : roleClaim;
+            }
+          } catch (error) {
+            console.error("Lỗi khi giải mã JWT để lấy Role:", error);
+          }
+        }
+        // ----------------------------------------------------------------------------------
       }
       return session;
     },
