@@ -83,6 +83,33 @@ public sealed class RecipeSortingTests : IDisposable
         Assert.Equal(0, publicDraft.TotalCount);
     }
 
+    [Fact]
+    public async Task Category_view_shows_only_published_recipes_and_the_authors_own_drafts()
+    {
+        var authorId = Guid.NewGuid();
+        var otherAuthorId = Guid.NewGuid();
+        var category = context.Categories.Single();
+        context.Recipes.Single(recipe => recipe.Id == Id(5)).AuthorId = authorId;
+        var archived = Recipe(6, "Archived", 10, category, RecipeStatus.Archived);
+        archived.AuthorId = authorId;
+        var otherDraft = Recipe(7, "Other draft", 10, category, RecipeStatus.Draft);
+        otherDraft.AuthorId = otherAuthorId;
+        context.Recipes.AddRange(archived, otherDraft);
+        context.SaveChanges();
+
+        var result = await handler.Handle(new GetRecipesQuery(
+            CategoryId: category.Id,
+            CurrentUserId: authorId.ToString(),
+            CategoryView: true), default);
+
+        Assert.Equal(5, result.TotalCount);
+        Assert.Contains(result.Items, recipe => recipe.Id == Id(5));
+        Assert.DoesNotContain(result.Items, recipe => recipe.Id == Id(6) || recipe.Id == Id(7));
+
+        var guest = await handler.Handle(new GetRecipesQuery(CategoryId: category.Id, CategoryView: true), default);
+        Assert.Equal(4, guest.TotalCount);
+    }
+
     private static Guid Id(int n) => Guid.Parse($"00000000-0000-0000-0000-{n:000000000000}");
     private static Recipe Recipe(int n, string title, int minutes, Category category, RecipeStatus status = RecipeStatus.Published)
         => new() { Id = Id(n), Title = title, CookingTimeMinutes = minutes, Category = category,

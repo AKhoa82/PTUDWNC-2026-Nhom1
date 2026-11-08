@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CulinaryBlog.Application.Contracts.Persistence;
 using CulinaryBlog.Application.DTOs;
+using CulinaryBlog.Domain.Entities;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
@@ -26,18 +27,19 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
 
     public async Task<List<CategoryDto>> Handle(GetCategoriesQuery request, CancellationToken cancellationToken)
     {
-        // 1. Đọc dữ liệu từ Redis cache
+        var recipeListVersion = await _context.GetRecipeListVersionAsync(cancellationToken);
         var cachedCategories = await _cache.GetStringAsync(CacheKey, cancellationToken);
         if (!string.IsNullOrEmpty(cachedCategories))
         {
-            var result = JsonSerializer.Deserialize<List<CategoryDto>>(cachedCategories);
-            if (result is not null)
+            try
             {
-                return result;
+                var cached = JsonSerializer.Deserialize<CachedCategories>(cachedCategories);
+                if (cached is not null && cached.RecipeListVersion == recipeListVersion)
+                    return cached.Items;
             }
+            catch (JsonException) { /* Old cache format; refresh it below. */ }
         }
 
-        // 2. Query database: Map sang CategoryDto, sắp xếp Name ASC
         var categories = await _context.Categories
             .AsNoTracking()
             .OrderBy(c => c.Name)
@@ -47,11 +49,10 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
                 Name = c.Name,
                 Slug = c.Slug,
                 Description = c.Description,
-                RecipeCount = c.Recipes.Count
+                RecipeCount = c.Recipes.Count(r => r.Status == RecipeStatus.Published)
             })
             .ToListAsync(cancellationToken);
 
-        // 3. Cache kết quả với TTL 60 phút
         var cacheOptions = new DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(60)
@@ -59,7 +60,7 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
 
         await _cache.SetStringAsync(
             CacheKey,
-            JsonSerializer.Serialize(categories),
+            JsonSerializer.Serialize(new CachedCategories(recipeListVersion, categories)),
             cacheOptions,
             cancellationToken);
 
@@ -72,4 +73,6 @@ public class GetCategoriesQueryHandler : IRequestHandler<GetCategoriesQuery, Lis
     /// </summary>
     public static Task InvalidateCacheAsync(IDistributedCache cache, CancellationToken cancellationToken = default)
         => cache.RemoveAsync(CacheKey, cancellationToken);
+
+    private sealed record CachedCategories(string? RecipeListVersion, List<CategoryDto> Items);
 }

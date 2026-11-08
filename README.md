@@ -145,6 +145,8 @@ cd CulinaryBlog
 
 **Chạy ứng dụng:**
 
+- Sao chép `.env.example` thành `.env` ở thư mục gốc và đặt `SEQ_ADMIN_PASSWORD` thành mật khẩu riêng trước khi chạy `docker compose up -d`. Docker Compose sẽ báo lỗi rõ ràng nếu biến này còn trống. `.env` đã được loại khỏi Git.
+- Seq chỉ dùng mật khẩu này khi tạo volume dữ liệu lần đầu; volume đã có sẽ giữ mật khẩu trước đó.
 - Mở file solution CulinaryBlog.sln bằng Visual Studio 2022 (đã cập nhật .NET 10 SDK)
 - Đặt project CulinaryBlog.API làm Startup Project và nhấn F5 hoặc Ctrl + F5
 
