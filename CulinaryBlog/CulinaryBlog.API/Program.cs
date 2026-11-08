@@ -384,9 +384,15 @@ app.MapGet("/api/v1/categories", async (
 app.MapGet("/api/v1/categories/{slug}", async (
     string slug,
     IMediator mediator,
-    CancellationToken cancellationToken) =>
+    System.Security.Claims.ClaimsPrincipal user,
+    CancellationToken cancellationToken,
+    int page = 1,
+    int pageSize = 12) =>
 {
-    var result = await mediator.Send(new GetCategoryBySlugQuery(slug), cancellationToken);
+    var currentUserId = user.Identity?.IsAuthenticated == true
+        ? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        : null;
+    var result = await mediator.Send(new GetCategoryBySlugQuery(slug, page, pageSize, currentUserId), cancellationToken);
     return Results.Ok(result);
 })
 .WithName("GetCategoryBySlug")
@@ -406,7 +412,8 @@ app.MapGet("/api/v1/recipes", async (
     int? minServings = null,
     string sort = "-createdAt",
     Guid? authorId = null,
-    string? status = null) =>
+    string? status = null,
+    bool categoryView = false) =>
 {
     string? currentUserId = null;
     bool isAdmin = false;
@@ -429,7 +436,8 @@ app.MapGet("/api/v1/recipes", async (
         CurrentUserId: currentUserId,
         IsAdmin: isAdmin,
         AuthorId: authorId,
-        StatusRaw: status
+        StatusRaw: status,
+        CategoryView: categoryView
     );
 
     var result = await mediator.Send(query, cancellationToken);
@@ -590,29 +598,6 @@ using (var scope = app.Services.CreateScope())
             throw new InvalidOperationException($"{adminEmail} already exists without the Admin role. Use another account or resolve the existing account manually.");
         }
     }
-
-    // --- FIX ISSUE 1: TẠO TÀI KHOẢN ADMIN ĐỂ TEST ĐĂNG NHẬP BẰNG EMAIL ---
-    var testAdminEmail = "admin.test@gmail.com";
-    var testAdmin = await userManager.FindByEmailAsync(testAdminEmail);
-    if (testAdmin == null)
-    {
-        testAdmin = new User
-        {
-            UserName = "admin-test",
-            Email = testAdminEmail,
-            EmailConfirmed = true,
-            FullName = "Admin Test Email"
-        };
-        // Tạo tài khoản với mật khẩu cố định
-        await userManager.CreateAsync(testAdmin, "Password123!");
-        await userManager.AddToRoleAsync(testAdmin, "Admin");
-        Console.WriteLine($"[Seeder] Đã tạo tài khoản Admin test: {testAdminEmail} / Password123!");
-    }
-    else if (!await userManager.IsInRoleAsync(testAdmin, "Admin"))
-    {
-        await userManager.AddToRoleAsync(testAdmin, "Admin");
-    }
-    // ----------------------------------------------------------
 
     if (!await dbContext.Categories.AnyAsync())
     {

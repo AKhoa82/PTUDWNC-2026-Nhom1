@@ -30,7 +30,7 @@ export default async function CategoryPage({ params }: PageProps) {
   if (!category) notFound();
 
   // Load dữ liệu public ban đầu (SSR) để SEO đọc được
-  const query = new URLSearchParams({ categoryId: category.id, page: "1", pageSize: "12", sort: "-createdAt" });
+  const query = new URLSearchParams({ categoryId: category.id, categoryView: "true", page: "1", pageSize: "12", sort: "-createdAt" });
   const publicRecipes = await recipeRequest<PagedRecipes>(`/v1/recipes?${query}`, { cache: "no-store" });
 
   return (

@@ -1,20 +1,29 @@
 ﻿import RecipeCard from "@/components/recipes/RecipeCard";
 import { notFound } from "next/navigation";
+import type { PagedRecipes, RecipeCategory } from "@/lib/recipes";
 
-async function getCategoryDetail(slug: string) {
+type CategoryDetail = {
+  category: RecipeCategory & { description?: string };
+  recipes: PagedRecipes;
+};
+
+async function getCategoryDetail(slug: string): Promise<CategoryDetail | null> {
   const res = await fetch(`http://localhost:5018/api/v1/categories/${slug}`, {
-    next: { revalidate: 3600 } // Cache 60 phút
+    cache: "no-store"
   });
   if (!res.ok) return null;
   return res.json();
 }
 
-export default async function CategoryDetailPage({ params }: { params: { slug: string } }) {
-  const category = await getCategoryDetail(params.slug);
+export default async function CategoryDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const detail = await getCategoryDetail(slug);
 
-  if (!category) {
+  if (!detail) {
     notFound();
   }
+
+  const { category, recipes } = detail;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -26,8 +35,8 @@ export default async function CategoryDetailPage({ params }: { params: { slug: s
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {category.recipes?.length > 0 ? (
-          category.recipes.map((recipe: any) => (
+        {recipes.items.length > 0 ? (
+          recipes.items.map((recipe) => (
             <RecipeCard key={recipe.id} recipe={recipe} />
           ))
         ) : (

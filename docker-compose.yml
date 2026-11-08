@@ -44,8 +44,7 @@ services:
     container_name: seq_culinaryblog
     environment:
       - ACCEPT_EULA=Y
-      # FIX ISSUE 5: Nhận mật khẩu từ file .env
-      - SEQ_FIRSTRUN_ADMINPASSWORD=${SEQ_ADMIN_PASSWORD}
+      - SEQ_FIRSTRUN_ADMINPASSWORD=${SEQ_ADMIN_PASSWORD:?Set SEQ_ADMIN_PASSWORD in the root .env file}
     ports:
       # FIX ISSUE 5: Giới hạn port nội bộ (localhost)
       - "127.0.0.1:5341:80"

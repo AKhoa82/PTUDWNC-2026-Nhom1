@@ -36,7 +36,13 @@ public class GetRecipesQueryHandler : IRequestHandler<GetRecipesQuery, PagedResu
             .Include(r => r.Category)
             .AsQueryable();
 
-        if (!request.IsAdmin)
+        if (request.CategoryView)
+        {
+            var hasUserId = Guid.TryParse(request.CurrentUserId, out var currentUserId);
+            query = query.Where(r => r.Status == RecipeStatus.Published ||
+                (r.Status == RecipeStatus.Draft && hasUserId && r.AuthorId == currentUserId));
+        }
+        else if (!request.IsAdmin)
         {
             if (!string.IsNullOrEmpty(request.CurrentUserId))
             {
